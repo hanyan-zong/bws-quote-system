@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BWS 预报价系统 · 思维导图</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #1e2761 0%, #2a3a8c 100%);
+    min-height: 100vh;
+    padding: 20px;
+  }
+  .container {
+    max-width: 1400px;
+    margin: 0 auto;
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    overflow: hidden;
+  }
+  header {
+    background: linear-gradient(135deg, #1e2761 0%, #f59e0b 100%);
+    color: #fff;
+    padding: 30px 40px;
+  }
+  header h1 { font-size: 28px; margin-bottom: 8px; }
+  header p { opacity: 0.9; font-size: 14px; }
+  nav {
+    background: #f5f7fa;
+    padding: 12px 40px;
+    border-bottom: 1px solid #e0e4ec;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  nav button {
+    padding: 8px 16px;
+    border: 1px solid #d0d7e2;
+    background: #fff;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.15s;
+  }
+  nav button:hover { background: #1e2761; color: #fff; border-color: #1e2761; }
+  nav button.active { background: #f59e0b; color: #fff; border-color: #f59e0b; }
+  .panel { padding: 40px; min-height: 600px; }
+  .panel.hidden { display: none; }
+  .mermaid { display: flex; justify-content: center; }
+  .legend {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 20px;
+    padding: 16px;
+    background: #fafbfc;
+    border-radius: 8px;
+    flex-wrap: wrap;
+    font-size: 13px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 50%; }
+  footer {
+    padding: 20px 40px;
+    background: #f5f7fa;
+    border-top: 1px solid #e0e4ec;
+    color: #6b7280;
+    font-size: 12px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+<header>
+<h1>BWS 预报价系统 · B 端版本 · 思维导图</h1>
+<p>v0.1 · 2026-05-05 · 切换不同视图查看 模块 / 数据流 / 数据库 / AI流 / 校验流 / 赌自费</p>
+</header>
+
+<nav>
+<button class="tab-btn active" data-target="overview">总览思维导图</button>
+<button class="tab-btn" data-target="modules">模块拆解</button>
+<button class="tab-btn" data-target="dataflow">数据流</button>
+<button class="tab-btn" data-target="db">数据库 ER</button>
+<button class="tab-btn" data-target="aiflow">AI 解析流程</button>
+<button class="tab-btn" data-target="feasibility">合理性校验流程</button>
+<button class="tab-btn" data-target="gamble">赌自费决策树</button>
+<button class="tab-btn" data-target="user-journey">用户旅程</button>
+</nav>
+
+<!-- 总览 -->
+<div class="panel" id="overview">
+<div class="legend">
+<div class="legend-item"><span class="legend-dot" style="background:#1e2761"></span>核心模块</div>
+<div class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span>AI 能力</div>
+<div class="legend-item"><span class="legend-dot" style="background:#10b981"></span>业务输出</div>
+<div class="legend-item"><span class="legend-dot" style="background:#ef4444"></span>风险护栏</div>
+</div>
+<div class="mermaid">
+mindmap
+  root((BWS 预报价<br/>B 端系统))
+    资源库
+      酒店 + 房型
+      景点
+      餐厅
+      下午茶
+      SPA 套餐
+      水上项目
+      车辆
+      导游
+      自费项目
+    AI 文档采集
+      PDF 解析
+      DOCX 解析
+      Excel 解析
+      图片视觉解析
+      用户修正反馈
+      持续优化 prompt
+    行程组合
+      一日游模板
+      自由活动
+      多日组合
+      跨目的地
+    合理性校验
+      距离矩阵
+      时间预算
+      车型限制
+      车型-距离绑定
+        单段最长驾驶
+        全天最长驾驶
+        路段最大座位
+      闭馆时间
+      AI 路线评估
+      替代方案建议
+    计价引擎
+      IDR 成本汇总
+      汇率换算
+      利润叠加
+      淡旺季倍率
+      儿童折扣
+    赌自费
+      AI 推荐值
+      区间下限上限
+      信心分
+      历史回写
+      风险护栏
+      不赌规则可自定义
+        条件组合
+        优先级评估
+        命中即跳过
+      自费重叠剔除
+        category 类型匹配
+        显式 overlap_ids
+      free_hours 细粒度
+        全程/半天/全天
+    报价输出
+      Excel 报价单
+      PDF 报价单
+      Word 报价单
+      仅显示 CNY 不暴露成本
+    管理设置
+      汇率维护
+      时间预算
+      赌自费开关
+      模板维护
+      用户权限
+</div>
+</div>
+
+<!-- 模块拆解 -->
+<div class="panel hidden" id="modules">
+<div class="mermaid">
+graph TB
+  subgraph 前端层
+    UI1[资源库管理面板]
+    UI2[报价生成面板]
+    UI3[设置面板]
+  end
+  subgraph API层
+    API1[Resources Router]
+    API2[Quotes Router]
+    API3[AI Parser Router]
+    API4[Feasibility Router]
+    API5[Gamble Router]
+    API6[Settings Router]
+  end
+  subgraph 业务引擎层
+    E1[Pricing Engine]
+    E2[Feasibility Engine]
+    E3[Gambling Engine]
+    E4[AI Document Parser]
+    E5[Doc Generator]
+  end
+  subgraph 数据层
+    DB[(SQLite)]
+    FS[uploads/ 文件存储]
+    LOG[logs/ 修正日志]
+  end
+  subgraph 外部
+    CL[Claude API]
+    GM[Google Distance Matrix<br/>v0.2]
+  end
+
+  UI1 --> API1
+  UI1 --> API3
+  UI2 --> API2
+  UI2 --> API4
+  UI2 --> API5
+  UI3 --> API6
+
+  API1 --> DB
+  API2 --> E1
+  API2 --> E2
+  API2 --> E3
+  API3 --> E4
+  API4 --> E2
+  API5 --> E3
+
+  E1 --> DB
+  E2 --> DB
+  E2 --> CL
+  E3 --> DB
+  E3 --> CL
+  E4 --> CL
+  E4 --> FS
+  E4 --> LOG
+  E5 --> DB
+
+  E2 -.v0.2.-> GM
+
+  style UI1 fill:#e0e7ff
+  style UI2 fill:#e0e7ff
+  style UI3 fill:#e0e7ff
+  style E4 fill:#fef3c7
+  style E2 fill:#fef3c7
+  style E3 fill:#fef3c7
+  style CL fill:#f59e0b,color:#fff
+</div>
+</div>
+
+<!-- 数据流 -->
+<div class="panel hidden" id="dataflow">
+<div class="mermaid">
+flowchart LR
+  A[管理员上传供应商 Excel] --> B[本地预解析]
+  B --> C[Claude API 抽字段]
+  C --> D[结构化 JSON]
+  D --> E[管理员预览确认]
+  E --> F[(资源库)]
+
+  G[业务员选行程] --> H[QuoteDay 列表]
+  H --> I[Feasibility 校验]
+  I --> J{校验通过?}
+  J -->|否| K[弹替代方案]
+  K --> H
+  J -->|是| L[Pricing 汇总成本]
+  L --> M[汇率换算 IDR→CNY]
+  M --> N[Gamble 推荐让利]
+  N --> O[用户接受/调整]
+  O --> P[最终报价]
+  P --> Q[导出 Excel/PDF]
+  P --> R[(报价单 quotes 表)]
+
+  S[团回程] --> T[财务回写自费收益]
+  T --> R
+  T --> U[gamble_history]
+  U --> V[每周聚合 反哺模型]
+  V --> W[更新 historical_purchase_rate]
+
+  F -.读.-> G
+  F -.读.-> L
+
+  style C fill:#f59e0b,color:#fff
+  style I fill:#fef3c7
+  style N fill:#fef3c7
+  style V fill:#dcfce7
+</div>
+</div>
+
+<!-- 数据库 ER -->
+<div class="panel hidden" id="db">
+<div class="mermaid">
+erDiagram
+  destinations ||--o{ hotels : has
+  destinations ||--o{ attractions : has
+  destinations ||--o{ restaurants : has
+  destinations ||--o{ vehicles : has
+  destinations ||--o{ guides : has
+  destinations ||--o{ day_trip_templates : has
+  hotels ||--o{ hotel_rooms : has
+  day_trip_templates ||--o{ template_attractions : contains
+  day_trip_templates ||--o{ template_restaurants : contains
+  template_attractions }o--|| attractions : refs
+  template_restaurants }o--|| restaurants : refs
+
+  quotes ||--o{ quote_days : has
+  quote_days ||--o{ quote_items : has
+  quote_days }o--o| hotels : "今晚住"
+  quote_days }o--o| hotel_rooms : "住房型"
+  quote_days }o--o| vehicles : "用车"
+  quote_days }o--o| guides : "导游"
+  quote_days }o--o| restaurants : "午晚餐"
+  quote_days }o--o| day_trip_templates : "套用模板"
+  quote_items }o--|| attractions : refs
+
+  quotes ||--o{ quote_optional_tours : recommends
+  quote_optional_tours }o--|| optional_tours : refs
+
+  quotes ||--o{ gamble_history : "回写实际"
+  exchange_rates ||--o{ quotes : "锁定汇率"
+  ai_extractions ||--o{ hotels : "可入库"
+  ai_extractions ||--o{ vehicles : "可入库"
+</div>
+</div>
+
+<!-- AI 解析流程 -->
+<div class="panel hidden" id="aiflow">
+<div class="mermaid">
+sequenceDiagram
+  participant U as 管理员
+  participant FE as 前端
+  participant API as FastAPI
+  participant LP as 本地预解析
+  participant CL as Claude API
+  participant DB as 资源库
+
+  U->>FE: 拖拽上传 Excel
+  FE->>API: POST /ai/parse
+  API->>LP: 按类型分流
+  alt PDF
+    LP->>LP: pdfplumber 抽文本+表格
+  else Excel
+    LP->>LP: openpyxl 抽 sheet+cell
+  else DOCX
+    LP->>LP: python-docx 抽段落+表格
+  else Image
+    LP->>LP: 转 base64 直送
+  end
+  LP-->>API: 结构化文本/图片
+  API->>CL: 调用 Claude<br/>system+user content
+  CL-->>API: 严格 JSON 响应
+  API->>API: JSON 校验+字段归一
+  API-->>FE: 抽取结果(含 confidence)
+  FE-->>U: 表格预览
+  U->>FE: 编辑/确认
+  FE->>API: POST /ai/parse/{id}/confirm
+  API->>DB: 写入 hotels/rooms/...
+  API->>API: 修正写 ai_corrections.jsonl
+  API-->>FE: 入库成功
+</div>
+</div>
+
+<!-- 合理性校验 -->
+<div class="panel hidden" id="feasibility">
+<div class="mermaid">
+flowchart TD
+  Start[用户保存某天行程] --> Build[构建当日 POI 路径<br/>酒店→A→B→餐厅→C→酒店]
+  Build --> Calc[计算驾驶时间<br/>带堵车系数]
+
+  Calc --> Tier1{Tier 1 硬约束}
+  Tier1 -->|总驾驶 > 上限| Fail1[FAIL: 超时]
+  Tier1 -->|车型禁入| Fail2[FAIL: 车型不符]
+  Tier1 -->|景点闭馆| Fail3[FAIL: 时段不对]
+  Tier1 -->|首末日酒店离机场太远| Fail4[FAIL: 接送时间不够]
+  Tier1 -->|通过| Tier2{Tier 2 软约束}
+
+  Tier2 -->|驾驶 4h-5h| Warn1[WARN: 节奏紧凑]
+  Tier2 -->|首站离酒店过远| Warn2[WARN: 建议改下午]
+  Tier2 -->|连续两天同区域| Warn3[WARN: 重复]
+  Tier2 -->|通过| Tier3[Tier 3 AI 评估]
+
+  Fail1 --> Sug[生成替代方案]
+  Fail2 --> Sug
+  Fail3 --> Sug
+  Fail4 --> Sug
+  Sug --> Display[前端展示<br/>错误+建议+一键应用]
+
+  Tier3 --> Async[异步调 Claude]
+  Async --> AIResult[AI 评分+改进建议]
+  AIResult --> Display
+
+  Warn1 --> Display
+  Warn2 --> Display
+  Warn3 --> Display
+
+  style Tier1 fill:#fee2e2
+  style Tier2 fill:#fef3c7
+  style Tier3 fill:#dcfce7
+</div>
+</div>
+
+<!-- 赌自费决策树 -->
+<div class="panel hidden" id="gamble">
+<div class="mermaid">
+flowchart TD
+  Q[报价 Calculate 触发] --> Get[读取行程结构]
+  Get --> CalcA[Step A: 自费购买能力<br/>遍历 optional_tours × 历史购买率]
+  CalcA --> CalcB[Step B: 自由时间系数<br/>min free_days/total ×1.5, 1.0]
+  CalcB --> CalcC[Step C: 客户类型加成<br/>蜜月1.30 / 亲子1.15 / 老年0.65]
+  CalcC --> CalcD[Step D: 季节加成<br/>旺1.10 / 平1.00 / 淡0.90]
+  CalcD --> CalcE[Step E: 期望自费毛利<br/>= revenue × margin × 系数]
+  CalcE --> CalcF[Step F: 推荐赌额<br/>= 期望 × safety_ratio 0.7]
+  CalcF --> CalcG[Step G: 区间下/上限<br/>×0.6 ~ ×1.2]
+  CalcG --> CalcH[Step H: AI 信心分<br/>Claude 综合判断]
+
+  CalcH --> Guard{风险护栏}
+  Guard -->|超过明面成本 25%| Cap[限制为 25% 上限]
+  Guard -->|首次合作 B 端| Half[赌额 ×0.5]
+  Guard -->|MICE/婚礼| Limit[强制赌额 ≤¥150]
+  Guard -->|管理员关闭| Off[不推荐 返回 0]
+  Guard -->|通过| Final[输出最终推荐]
+
+  Cap --> Final
+  Half --> Final
+  Limit --> Final
+  Final --> Display[前端卡片展示<br/>推荐值+区间+依据+配套自费]
+  Display --> User{用户决策}
+  User -->|接受| Apply[应用到报价]
+  User -->|手动调| Manual[填新值]
+  User -->|不赌| Zero[赌额=0]
+
+  style CalcH fill:#f59e0b,color:#fff
+  style Guard fill:#fee2e2
+</div>
+</div>
+
+<!-- 用户旅程 -->
+<div class="panel hidden" id="user-journey">
+<div class="mermaid">
+journey
+  title 业务员的一次完整报价旅程
+  section 准备资源
+    管理员上传供应商 Excel: 5: 管理员
+    AI 解析+确认入库: 4: 管理员
+  section 接询单
+    打开系统选目的地: 5: 业务员
+    填客户基本信息: 5: 业务员
+    选客户类型 蜜月 亲子: 5: 业务员
+  section 拼行程
+    选 Day 1 抵达酒店和接机: 5: 业务员
+    选 Day 2 一日游模板: 5: 业务员
+    Day 3 4 标记自由活动: 4: 业务员
+    选 Day 5 离开行程: 5: 业务员
+  section 校验调整
+    点击计算 触发校验: 5: 业务员
+    收到 Day 5 海神庙超时警告: 3: 业务员
+    一键应用建议 改早晨海神庙: 5: 业务员
+  section 价格优化
+    看到赌自费推荐 ¥450 让利: 4: 业务员
+    确认合理 接受推荐: 5: 业务员
+  section 输出
+    导出 Excel 客户版: 5: 业务员
+    导出 PDF 客户版: 5: 业务员
+  section 成单回写
+    财务填实际自费收益: 5: 财务
+    系统反哺模型 下次更准: 5: AI
+</div>
+</div>
+
+<footer>
+BWS 预报价系统 · B 端版本 · 思维导图 · 持续优化中
+</footer>
+
+</div>
+
+<script>
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'default',
+  themeVariables: {
+    primaryColor: '#1e2761',
+    primaryTextColor: '#fff',
+    primaryBorderColor: '#1e2761',
+    lineColor: '#5b6b8c',
+    fontSize: '14px'
+  }
+});
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
+    document.getElementById(btn.dataset.target).classList.remove('hidden');
+  });
+});
+</script>
+
+</body>
+</html>

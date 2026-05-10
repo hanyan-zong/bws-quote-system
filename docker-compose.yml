@@ -1,0 +1,51 @@
+services:
+  bws-quote:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bws-quote:0.2
+    container_name: bws-quote
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # AI: 真 API key 走真实 Claude; 不填走 mock 模式仍可用
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      BWS_AI_MODEL: "${BWS_AI_MODEL:-claude-sonnet-4-6}"
+      # 默认汇率 1 RMB = 2300 IDR (运行时也可在前端 UI 改)
+      BWS_DEFAULT_RATE: "${BWS_DEFAULT_RATE:-2300}"
+      # 时区
+      TZ: "Asia/Shanghai"
+    volumes:
+      # 持久化 SQLite 数据库, 升级/重启不丢报价
+      - ./backend/data:/app/backend/data
+      # 持久化用户上传文件 (供应商 Excel/PDF/图片)
+      - ./uploads:/app/uploads
+      # 持久化日志 (含 ai_corrections.jsonl 用于持续优化)
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ===== 可选: PostgreSQL (生产环境推荐) =====
+  # 启用方法: docker compose --profile postgres up -d
+  # 启用前需把 BWS_DATABASE_URL 改成 postgresql://bws:bws@postgres:5432/bws_quote
+  postgres:
+    image: postgres:16-alpine
+    container_name: bws-postgres
+    profiles: ["postgres"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: bws_quote
+      POSTGRES_USER: bws
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-bws_change_me}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  postgres_data:

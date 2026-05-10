@@ -1,0 +1,47 @@
+# 缓存与字节码
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# 本地数据 (容器内会重新初始化或挂载 volume)
+backend/data/*.db
+backend/data/*.db-journal
+uploads/**
+logs/**
+!uploads/.gitkeep
+!logs/.gitkeep
+
+# 压缩包 (避免重复打入镜像)
+*.zip
+*.rar
+*.tar
+*.tar.gz
+*.tgz
+
+# IDE / 系统垃圾
+.idea
+.vscode
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# 环境与密钥
+.env
+.env.*
+!.env.example
+
+# Git
+.git
+.gitignore
+
+# 测试与文档构建产物
+htmlcov/
+coverage.xml
+.coverage
+docs/_build/

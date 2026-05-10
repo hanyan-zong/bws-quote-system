@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>BWS 预报价单 — {{ q.quote_no }}</title>
+<style>
+  @page {
+    size: A4;
+    margin: 18mm 14mm 18mm 14mm;
+    @bottom-center {
+      content: "BWS 预报价单 · {{ q.quote_no }} · 第 " counter(page) " 页 / 共 " counter(pages) " 页";
+      font-family: "Noto Sans CJK SC", "DejaVu Sans", "Droid Sans Fallback", sans-serif;
+      font-size: 9px;
+      color: #718096;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Noto Sans CJK SC", "DejaVu Sans", "Droid Sans Fallback", sans-serif;
+    color: #2D3748;
+    font-size: 11px;
+    line-height: 1.6;
+  }
+  .header {
+    border-bottom: 3px solid #2C5282;
+    padding-bottom: 10px;
+    margin-bottom: 18px;
+  }
+  .header h1 {
+    color: #2C5282;
+    font-size: 26px;
+    margin: 0;
+    letter-spacing: 2px;
+  }
+  .header .meta {
+    color: #4A5568;
+    font-size: 10px;
+    margin-top: 4px;
+  }
+  h2.section {
+    background: #2C5282;
+    color: #fff;
+    padding: 6px 12px;
+    margin: 16px 0 10px;
+    font-size: 14px;
+    border-radius: 3px;
+  }
+  table.info {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 10px;
+  }
+  table.info td {
+    padding: 6px 10px;
+    border: 1px solid #CBD5E0;
+    vertical-align: top;
+  }
+  table.info td.label {
+    background: #EBF8FF;
+    font-weight: bold;
+    color: #2C5282;
+    width: 18%;
+    white-space: nowrap;
+  }
+  table.day {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 6px 0 14px;
+    page-break-inside: avoid;
+  }
+  table.day th, table.day td {
+    border: 1px solid #CBD5E0;
+    padding: 5px 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+  table.day th {
+    background: #EBF8FF;
+    color: #2C5282;
+    font-weight: bold;
+    width: 16%;
+  }
+  .day-title {
+    background: #2C5282;
+    color: #fff;
+    padding: 4px 10px;
+    font-weight: bold;
+    border-radius: 3px;
+    margin-top: 14px;
+  }
+  .day-title .free-tag {
+    background: #FBD38D;
+    color: #7B341E;
+    padding: 1px 6px;
+    border-radius: 2px;
+    font-size: 9px;
+    margin-left: 8px;
+  }
+  ul.attractions { margin: 0; padding-left: 18px; }
+  ul.attractions li { margin: 1px 0; }
+  table.price {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  table.price td {
+    padding: 8px 12px;
+    border: 1px solid #CBD5E0;
+  }
+  table.price td.label {
+    background: #EBF8FF;
+    font-weight: bold;
+    color: #2C5282;
+    width: 35%;
+  }
+  table.price td.value {
+    text-align: right;
+    font-weight: bold;
+  }
+  .price-highlight {
+    background: #FED7D7;
+    color: #C53030;
+    font-size: 14px;
+  }
+  .footer-note {
+    color: #A0AEC0;
+    font-size: 9px;
+    text-align: center;
+    margin-top: 16px;
+    font-style: italic;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>BWS 预报价单</h1>
+  <div class="meta">
+    单号 <b>{{ q.quote_no }}</b>
+    &nbsp;|&nbsp; 导出时间 {{ meta.exported_at }}
+    &nbsp;|&nbsp; 导出人 {{ meta.exported_by }}
+  </div>
+</div>
+
+<h2 class="section">一、客户与行程概要</h2>
+<table class="info">
+  <tr>
+    <td class="label">旅行社</td><td>{{ q.agency_name or '—' }}</td>
+    <td class="label">联系人</td><td>{{ q.agency_contact or '—' }}</td>
+  </tr>
+  <tr>
+    <td class="label">客户姓名</td><td>{{ q.customer_name or '—' }}</td>
+    <td class="label">目的地</td><td>{{ q.destination_codes or '—' }}</td>
+  </tr>
+  <tr>
+    <td class="label">出发 / 结束</td>
+    <td>{{ q.start_date }} → {{ q.end_date }}</td>
+    <td class="label">天数 / 自由</td>
+    <td>{{ q.total_days }} 天 / 含 {{ q.free_days }} 自由日</td>
+  </tr>
+  <tr>
+    <td class="label">成人 / 儿童</td>
+    <td>{{ q.pax_adult }} 大 + {{ q.pax_child }} 小 = {{ q.pax_total }} 人</td>
+    <td class="label">客户类型 / 季节</td>
+    <td>{{ q.customer_type_label }} / {{ q.season_label }}</td>
+  </tr>
+  {% if q.arrival_at or q.departure_at %}
+  <tr>
+    <td class="label">抵达航班</td>
+    <td>{{ q.arrival_at }} {{ q.arrival_airport }}</td>
+    <td class="label">离开航班</td>
+    <td>{{ q.departure_at }} {{ q.departure_airport }}</td>
+  </tr>
+  {% endif %}
+</table>
+
+<h2 class="section">二、逐日行程</h2>
+{% for d in days %}
+<div class="day-title">
+  第 {{ d.day_index }} 天 &nbsp; {{ d.date }}
+  {% if d.is_free %}<span class="free-tag">全天自由 ({{ d.free_hours }}h)</span>
+  {% elif d.free_hours >= 4 %}<span class="free-tag">半自由 ({{ d.free_hours }}h)</span>
+  {% endif %}
+</div>
+<table class="day">
+  {% if d.hotel %}
+  <tr><th>住宿</th><td>{{ d.hotel }} {% if d.room %}/ {{ d.room }}{% endif %}</td></tr>
+  {% endif %}
+  {% if d.vehicle %}
+  <tr><th>用车</th><td>{{ d.vehicle }}{% if d.guide %} | 导游 {{ d.guide }}{% endif %}</td></tr>
+  {% endif %}
+  {% if d.breakfast_included or d.lunch or d.dinner or d.afternoon_tea %}
+  <tr><th>餐</th><td>
+    {% if d.breakfast_included %}含早 &nbsp;{% endif %}
+    {% if d.lunch %}午: {{ d.lunch }} &nbsp;{% endif %}
+    {% if d.dinner %}晚: {{ d.dinner }}{% endif %}
+    {% if d.afternoon_tea %}<br>下午茶: {{ d.afternoon_tea }}{% endif %}
+  </td></tr>
+  {% endif %}
+  {% if d.attractions %}
+  <tr><th>景点 / 体验</th><td>
+    <ul class="attractions">
+      {% for a in d.attractions %}
+      <li>{{ a.order }}. {{ a.name }}{% if a.stay_minutes %} <span style="color:#718096">({{ a.stay_minutes }} min)</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </td></tr>
+  {% endif %}
+  {% if d.spa or d.water_activity %}
+  <tr><th>升级体验</th><td>
+    {% if d.spa %}SPA: {{ d.spa }}{% endif %}
+    {% if d.water_activity %}{% if d.spa %} | {% endif %}水上: {{ d.water_activity }}{% endif %}
+  </td></tr>
+  {% endif %}
+  {% if d.notes %}
+  <tr><th>备注</th><td>{{ d.notes }}</td></tr>
+  {% endif %}
+</table>
+{% endfor %}
+
+<h2 class="section">三、价格汇总</h2>
+<table class="price">
+  <tr>
+    <td class="label">人均报价</td>
+    <td class="value price-highlight">¥ {{ "{:,.2f}".format(q.price_cny_per_pax) }}</td>
+  </tr>
+  <tr>
+    <td class="label">总报价</td>
+    <td class="value price-highlight">¥ {{ "{:,.2f}".format(q.price_cny_total) }}</td>
+  </tr>
+  {% if show_costs %}
+  <tr><td class="label">人均成本 (CNY)</td><td class="value">¥ {{ "{:,.2f}".format(q.cost_cny_total / q.pax_total) }}</td></tr>
+  <tr><td class="label">人均利润</td><td class="value">¥ {{ "{:,.2f}".format(q.profit_cny_per_pax) }}</td></tr>
+  <tr><td class="label">人均赌额 (让利)</td><td class="value">¥ {{ "{:,.2f}".format(q.gamble_cny_per_pax) }}</td></tr>
+  <tr><td class="label">汇率 RMB:IDR</td><td class="value">1 : {{ "{:,.2f}".format(q.exchange_rate) }}</td></tr>
+  {% endif %}
+</table>
+
+{% if not show_costs %}
+<div class="footer-note">※ 本报价为最终客户成交价 · 内部成本与利润数据已隐藏 · 仅供旅行社参考报价给客户使用</div>
+{% endif %}
+
+{% if q.notes %}
+<h2 class="section">四、备注</h2>
+<div style="padding: 8px 12px; background: #F7FAFC; border: 1px solid #E2E8F0; border-radius: 3px;">
+  {{ q.notes }}
+</div>
+{% endif %}
+
+<div class="footer-note">
+  本报价单由 BWS 预报价系统 B 端版本 (v0.5) 自动生成 ·
+  © PT BWS Indonesia
+</div>
+
+</body>
+</html>

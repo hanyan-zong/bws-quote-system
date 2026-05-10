@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BWS 预报价系统 · B 端</title>
+<link rel="stylesheet" href="/static/vendor/element-plus.css">
+<link rel="stylesheet" href="/static/css/style.css?v=14">
+</head>
+<body>
+
+<div id="app">
+  <el-config-provider :locale="zhCn">
+    <div class="app-shell">
+      <header class="app-header">
+        <div class="brand">
+          <div class="logo">BWS</div>
+          <div class="brand-text">
+            <h1>预报价系统 · B 端</h1>
+            <div class="sub">v0.8.4 · 同业旅行社智能报价系统</div>
+          </div>
+        </div>
+        <div class="header-actions">
+          <span :class="['header-status-pill', aiAvailable ? 'ok' : 'warn']">
+            ● AI {{ aiAvailable ? '在线' : 'Mock' }}
+          </span>
+          <el-dropdown v-if="authenticated && currentUser" trigger="click" @command="onUserMenuCmd">
+            <button type="button" class="header-user-btn">
+              <span class="hub-avatar">{{ (currentUser.display_name || currentUser.username).charAt(0).toUpperCase() }}</span>
+              <span>{{ currentUser.display_name || currentUser.username }}</span>
+              <span class="hub-role">{{ roleLabel || currentUser.role }}</span>
+              <span style="opacity:0.6;font-size:10px">▾</span>
+            </button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item disabled style="font-size:11px;color:#909399">
+                  当前账号: {{ currentUser.username }}
+                </el-dropdown-item>
+                <el-dropdown-item divided command="quotas">📊 我的配额</el-dropdown-item>
+                <el-dropdown-item command="changepwd">🔑 修改密码</el-dropdown-item>
+                <el-dropdown-item divided command="logout" style="color:#f56c6c">⏻ 退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+
+        <!-- 我的配额 dialog -->
+        <el-dialog v-model="quotaDialog" title="📊 我的配额" width="720px">
+          <el-table :data="myQuotas" size="small" border stripe v-loading="quotaLoading">
+            <el-table-column prop="category" label="类别" width="80" />
+            <el-table-column prop="label" label="功能" min-width="200" />
+            <el-table-column prop="period" label="周期" width="80">
+              <template #default="s">
+                {{ {daily:'每日', monthly:'每月', total:'累计'}[s.row.period] || s.row.period }}
+              </template>
+            </el-table-column>
+            <el-table-column label="已用 / 上限" width="140" align="right">
+              <template #default="s">
+                <span v-if="s.row.limit === -1" style="color:#67c23a">无限制</span>
+                <span v-else-if="s.row.limit === 0" style="color:#f56c6c">禁用</span>
+                <span v-else>
+                  <strong :style="{color: s.row.remaining === 0 ? '#f56c6c' : (s.row.remaining < s.row.limit*0.2 ? '#e6a23c' : '#303133')}">
+                    {{ s.row.used }}
+                  </strong> / {{ s.row.limit }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column label="剩余" width="80" align="right">
+              <template #default="s">
+                <span v-if="s.row.limit === -1" style="color:#67c23a">∞</span>
+                <span v-else-if="s.row.remaining === 0" style="color:#f56c6c">0</span>
+                <span v-else>{{ s.row.remaining }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="重置时间" width="120">
+              <template #default="s">
+                <span v-if="s.row.reset_at" style="font-size:11px;color:#909399">
+                  {{ s.row.reset_at.slice(5, 16).replace('T', ' ') }}
+                </span>
+                <span v-else style="color:#909399">—</span>
+              </template>
+            </el-table-column>
+          </el-table>
+          <p style="color:#909399;font-size:12px;margin-top:12px">
+            ⓘ 如需调整配额, 请联系超级管理员或所在旅行社老板.
+            周期 = 每月: 每月 1 号 UTC 00:00 自动重置 used 计数.
+          </p>
+        </el-dialog>
+
+        <!-- v0.8.3 改密 dialog -->
+        <el-dialog v-model="changePasswordDialog" title="🔑 修改密码" width="460px">
+          <el-form label-position="top">
+            <el-form-item label="当前密码 ★">
+              <el-input v-model="changePasswordForm.old_password" type="password" show-password size="large" />
+            </el-form-item>
+            <el-form-item label="新密码 ★ (至少 8 位)">
+              <el-input v-model="changePasswordForm.new_password" type="password" show-password size="large" />
+            </el-form-item>
+            <el-form-item label="再次输入新密码 ★">
+              <el-input v-model="changePasswordForm.new_password_confirm" type="password" show-password size="large" />
+            </el-form-item>
+          </el-form>
+          <div v-if="changePasswordError" style="background:#fee2e2;color:#b91c1c;padding:8px 12px;border-radius:6px;font-size:13px;margin-top:8px">
+            ⚠ {{ changePasswordError }}
+          </div>
+          <template #footer>
+            <el-button @click="changePasswordDialog = false">取消</el-button>
+            <el-button type="primary" :loading="changePasswordLoading" @click="doChangePassword">确认修改</el-button>
+          </template>
+        </el-dialog>
+
+        <!-- v0.8.3 主密钥自助解锁 modal -->
+        <el-dialog v-model="masterUnlockDialog" title="🔓 自助解锁 / 重置密码" width="500px">
+          <el-alert type="warning" :closable="false" style="margin-bottom:16px">
+            <template #title>需要"主密钥"才能使用此功能</template>
+            <div style="font-size:12px;line-height:1.6">
+              主密钥 = <code>.env</code> 里的 <code>BWS_AUTH_PASSWORD</code> (默认 <code>admin123</code>)<br>
+              生产环境部署时应改成强密码; 仅服务器部署者知道.
+            </div>
+          </el-alert>
+          <el-form label-position="top">
+            <el-form-item label="主密钥 ★">
+              <el-input v-model="masterUnlockForm.master_password" type="password" show-password
+                placeholder="服务器 .env 里的 BWS_AUTH_PASSWORD" size="large" />
+            </el-form-item>
+            <el-form-item label="目标用户">
+              <el-input v-model="masterUnlockForm.target_username" placeholder="留空 = admin" size="large" />
+            </el-form-item>
+            <el-form-item label="同时重置密码 (可选, 留空仅解锁)">
+              <el-input v-model="masterUnlockForm.reset_password_to" type="password" show-password
+                placeholder="留空 = 不改密; 填了 = 改成此密码" size="large" />
+            </el-form-item>
+          </el-form>
+          <div v-if="masterUnlockError" style="background:#fee2e2;color:#b91c1c;padding:8px 12px;border-radius:6px;font-size:13px;margin:8px 0">
+            ⚠ {{ masterUnlockError }}
+          </div>
+          <div v-if="masterUnlockSuccess" style="background:#dcfce7;color:#166534;padding:8px 12px;border-radius:6px;font-size:13px;margin:8px 0">
+            ✓ {{ masterUnlockSuccess }}
+          </div>
+          <template #footer>
+            <el-button @click="masterUnlockDialog = false; masterUnlockError=''; masterUnlockSuccess=''">关闭</el-button>
+            <el-button type="primary" :loading="masterUnlockLoading" @click="doMasterUnlock">执行</el-button>
+          </template>
+        </el-dialog>
+      </header>
+
+      <!-- v0.8.4 默认密码警告 sub-header (header 下方独立一行) -->
+      <div v-if="authenticated && currentUser && currentUser.force_password_change" class="password-warning-bar">
+        <span>⚠ 您正在使用<strong>默认密码</strong>(或临时重置的密码), 强烈建议立即修改</span>
+        <button type="button" class="pw-btn" @click="changePasswordDialog = true">🔑 立即修改密码</button>
+      </div>
+
+      <!-- ============================================================
+           v0.8.2 现代 SaaS 风格登录/注册向导 (全屏渐变 + 居中卡片)
+           ============================================================ -->
+      <div v-show="!authenticated" class="login-wrap">
+
+        <!-- 顶部品牌 -->
+        <div class="login-brand-line">
+          <div class="lb-logo">BWS</div>
+          <div class="lb-text">预报价系统 · B 端</div>
+        </div>
+
+        <!-- 主卡片 -->
+        <div class="login-card-modern">
+
+          <!-- ===== Step 0: 三大入口 ===== -->
+          <template v-if="authMode === 'select'">
+            <div class="lcm-header">
+              <h2 class="lcm-title">欢迎使用 BWS 预报价系统</h2>
+              <p class="lcm-subtitle">同业旅行社智能报价 · 请选择登录方式</p>
+            </div>
+            <div class="lcm-body">
+              <button type="button" class="lcm-entry-btn"
+                style="--lcm-color:#1e2761; --lcm-bg:#f6f9ff"
+                @click="authMode='login'">
+                <span class="lcm-icon">🔑</span>
+                <span class="lcm-text">
+                  <div class="lcm-text-title">已有账号 · 登录</div>
+                  <div class="lcm-text-desc">使用您现有的用户名和密码</div>
+                </span>
+                <span class="lcm-arrow">→</span>
+              </button>
+              <button type="button" class="lcm-entry-btn"
+                style="--lcm-color:#059669; --lcm-bg:#f0fdf4"
+                @click="goRegisterInvite">
+                <span class="lcm-icon" style="background:#059669">📨</span>
+                <span class="lcm-text">
+                  <div class="lcm-text-title">我有邀请码 · 注册</div>
+                  <div class="lcm-text-desc">使用管理员发给您的 bws-XXX 邀请码</div>
+                </span>
+                <span class="lcm-arrow">→</span>
+              </button>
+              <button type="button" class="lcm-entry-btn"
+                style="--lcm-color:#d97706; --lcm-bg:#fef3c7"
+                @click="goRegisterPublic">
+                <span class="lcm-icon" style="background:#d97706">✨</span>
+                <span class="lcm-text">
+                  <div class="lcm-text-title">自助申请新账号</div>
+                  <div class="lcm-text-desc">无邀请码 · 提交后等管理员审批</div>
+                </span>
+                <span class="lcm-arrow">→</span>
+              </button>
+            </div>
+          </template>
+
+          <!-- ===== 登录 ===== -->
+          <template v-else-if="authMode === 'login'">
+            <div class="lcm-header">
+              <span class="lcm-back" @click="authMode='select'">← 返回</span>
+              <h2 class="lcm-title">用户登录</h2>
+              <p class="lcm-subtitle">输入您的账号和密码</p>
+            </div>
+            <div class="lcm-body">
+              <el-form label-position="top" @submit.prevent>
+                <el-form-item label="账号">
+                  <el-input v-model="loginUsername" placeholder="请输入用户名" @keyup.enter="doLogin" autofocus size="large">
+                    <template #prefix>👤</template>
+                  </el-input>
+                </el-form-item>
+                <el-form-item label="密码">
+                  <el-input v-model="loginPassword" type="password" show-password
+                    placeholder="请输入密码" @keyup.enter="doLogin" size="large">
+                    <template #prefix>🔒</template>
+                  </el-input>
+                </el-form-item>
+              </el-form>
+              <div v-if="loginError" class="lcm-error">
+                ⚠ {{ loginError }}
+                <div v-if="loginError.includes('锁定') || loginError.includes('密码错误')" style="margin-top:8px;font-size:12px">
+                  <a href="#" style="color:#1e2761;text-decoration:underline" @click.prevent="masterUnlockDialog = true">
+                    🔓 使用环境密钥自助解锁 / 重置密码
+                  </a>
+                </div>
+              </div>
+              <div class="lcm-actions">
+                <button type="button" class="lcm-btn lcm-btn-secondary" @click="authMode='select'">返回</button>
+                <button type="button" class="lcm-btn lcm-btn-primary" :disabled="loginLoading" @click="doLogin">
+                  {{ loginLoading ? '登录中...' : '登录' }}
+                </button>
+              </div>
+              <div class="lcm-divider">还没有账号?</div>
+              <div style="display:flex;gap:8px;font-size:13px;justify-content:center;color:#606266">
+                <a href="#" style="color:#059669;text-decoration:none" @click.prevent="goRegisterInvite">📨 邀请码注册</a>
+                <span style="color:#dcdfe6">|</span>
+                <a href="#" style="color:#d97706;text-decoration:none" @click.prevent="goRegisterPublic">✨ 自助申请</a>
+              </div>
+            </div>
+          </template>
+
+          <!-- ===== 邀请码注册 ===== -->
+          <template v-else-if="authMode === 'register-invite'">
+            <div class="lcm-header">
+              <span class="lcm-back" @click="authMode='select'; regError=''">← 返回</span>
+              <h2 class="lcm-title">邀请码注册</h2>
+              <p class="lcm-subtitle">使用管理员或老板发给您的邀请码</p>
+            </div>
+            <div class="lcm-body">
+              <el-steps :active="regInviteStep - 1" finish-status="success" align-center
+                style="margin-bottom:24px">
+                <el-step title="校验邀请码" />
+                <el-step title="设置账号" />
+              </el-steps>
+
+              <!-- Step 1 -->
+              <template v-if="regInviteStep === 1">
+                <div class="lcm-tip">📌 邀请码格式: <strong>bws-XXXXXXXXX</strong>(由旅行社老板或公司管理员生成)</div>
+                <el-form label-position="top">
+                  <el-form-item label="邀请码 ★">
+                    <el-input v-model="regForm.code" placeholder="bws-XXXXXXXXXXXXX"
+                      @keyup.enter="verifyInvite" autofocus size="large">
+                      <template #prefix>🎟</template>
+                    </el-input>
+                  </el-form-item>
+                </el-form>
+                <div v-if="regForm.invitationInfo" class="lcm-tip lcm-tip-success">
+                  ✓ 邀请码有效 · 加入 <strong>{{ regForm.invitationInfo.agency_name }}</strong>
+                  · 角色 <strong>{{ regForm.invitationInfo.role_label }}</strong>
+                </div>
+                <div v-if="regError" class="lcm-error">⚠ {{ regError }}</div>
+                <div class="lcm-actions">
+                  <button type="button" class="lcm-btn lcm-btn-secondary" @click="authMode='select'; regError=''">返回</button>
+                  <button type="button" class="lcm-btn lcm-btn-primary" :disabled="regLoading || !regForm.code" @click="verifyInvite">
+                    {{ regLoading ? '校验中...' : (regForm.invitationInfo ? '下一步 →' : '校验邀请码') }}
+                  </button>
+                </div>
+              </template>
+
+              <!-- Step 2 -->
+              <template v-if="regInviteStep === 2">
+                <div class="lcm-tip lcm-tip-success">✓ 邀请码已校验 · 请填写您的账号信息</div>
+                <el-form label-position="top">
+                  <el-form-item label="用户名 ★">
+                    <el-input v-model="regForm.username" placeholder="4 位以上 · 字母/数字/下划线" size="large" />
+                  </el-form-item>
+                  <el-form-item label="密码 ★">
+                    <el-input v-model="regForm.password" type="password" show-password
+                      placeholder="至少 8 位" size="large" />
+                  </el-form-item>
+                  <el-form-item label="显示名">
+                    <el-input v-model="regForm.display_name" placeholder="如: 张经理 (选填)" size="large" />
+                  </el-form-item>
+                  <el-form-item label="邮箱">
+                    <el-input v-model="regForm.email" type="email" placeholder="选填" size="large" />
+                  </el-form-item>
+                  <el-form-item label="手机">
+                    <el-input v-model="regForm.phone" placeholder="选填" size="large" />
+                  </el-form-item>
+                </el-form>
+                <div v-if="regError" class="lcm-error">⚠ {{ regError }}</div>
+                <div class="lcm-actions">
+                  <button type="button" class="lcm-btn lcm-btn-secondary" @click="regInviteStep=1; regError=''">← 上一步</button>
+                  <button type="button" class="lcm-btn lcm-btn-success" :disabled="regLoading" @click="submitRegisterInvite">
+                    {{ regLoading ? '注册中...' : '✓ 完成注册并登录' }}
+                  </button>
+                </div>
+              </template>
+            </div>
+          </template>
+
+          <!-- ===== 自助申请 ===== -->
+          <template v-else-if="authMode === 'register-public'">
+            <div class="lcm-header">
+              <span class="lcm-back" @click="authMode='select'; regError=''">← 返回</span>
+              <h2 class="lcm-title">自助申请新账号</h2>
+              <p class="lcm-subtitle">提交后等管理员审批,通过后才能登录</p>
+            </div>
+            <div class="lcm-body">
+              <el-steps :active="regPublicStep - 1" finish-status="success" align-center
+                style="margin-bottom:24px">
+                <el-step title="选择旅行社" />
+                <el-step title="账号信息" />
+                <el-step title="申请理由" />
+              </el-steps>
+
+              <!-- Step 1: 旅行社 + 角色 -->
+              <template v-if="regPublicStep === 1">
+                <el-form label-position="top">
+                  <el-form-item label="您要加入的旅行社 ★">
+                    <el-radio-group v-model="appForm.agency_choice" style="margin-bottom:8px">
+                      <el-radio-button value="existing">加入已有旅行社</el-radio-button>
+                      <el-radio-button value="new">申请新建旅行社</el-radio-button>
+                    </el-radio-group>
+                    <el-select v-if="appForm.agency_choice === 'existing'"
+                      v-model="appForm.agency_id" filterable placeholder="选择旅行社" style="width:100%" size="large">
+                      <el-option v-for="a in publicAgencies" :key="a.id" :label="a.name" :value="a.id" />
+                    </el-select>
+                    <el-input v-else v-model="appForm.requested_agency_name"
+                      placeholder="如: 上海康辉旅行社" size="large" />
+                  </el-form-item>
+                  <el-form-item label="申请角色 ★">
+                    <el-select v-model="appForm.requested_role" style="width:100%" size="large">
+                      <el-option label="业务员 agent — 给客户做报价" value="agent" />
+                      <el-option label="旅行社老板 agency_owner — 管理本社及邀请下属" value="agency_owner" />
+                      <el-option label="基础只读用户 viewer — 仅查看" value="viewer" />
+                    </el-select>
+                  </el-form-item>
+                </el-form>
+                <div v-if="regError" class="lcm-error">⚠ {{ regError }}</div>
+                <div class="lcm-actions">
+                  <button type="button" class="lcm-btn lcm-btn-secondary" @click="authMode='select'; regError=''">返回</button>
+                  <button type="button" class="lcm-btn lcm-btn-primary" @click="goPublicStep2">下一步 →</button>
+                </div>
+              </template>
+
+              <!-- Step 2: 账号 -->
+              <template v-if="regPublicStep === 2">
+                <el-form label-position="top">
+                  <el-form-item label="用户名 ★">
+                    <el-input v-model="appForm.username" placeholder="4 位以上 · 字母/数字/下划线" size="large" />
+                  </el-form-item>
+                  <el-form-item label="密码 ★">
+                    <el-input v-model="appForm.password" type="password" show-password
+                      placeholder="至少 8 位" size="large" />
+                  </el-form-item>
+                  <el-form-item label="显示名">
+                    <el-input v-model="appForm.display_name" placeholder="如: 张三 (选填)" size="large" />
+                  </el-form-item>
+                  <el-form-item label="邮箱">
+                    <el-input v-model="appForm.email" type="email" placeholder="选填 · 用于通知审批结果" size="large" />
+                  </el-form-item>
+                  <el-form-item label="手机">
+                    <el-input v-model="appForm.phone" placeholder="选填" size="large" />
+                  </el-form-item>
+                </el-form>
+                <div v-if="regError" class="lcm-error">⚠ {{ regError }}</div>
+                <div class="lcm-actions">
+                  <button type="button" class="lcm-btn lcm-btn-secondary" @click="regPublicStep=1; regError=''">← 上一步</button>
+                  <button type="button" class="lcm-btn lcm-btn-primary" @click="goPublicStep3">下一步 →</button>
+                </div>
+              </template>
+
+              <!-- Step 3: 理由 -->
+              <template v-if="regPublicStep === 3">
+                <el-form label-position="top">
+                  <el-form-item label="申请理由 (可选)">
+                    <el-input v-model="appForm.application_note" type="textarea" :rows="4"
+                      placeholder="如: 我是 XX 旅行社的新业务员,需要使用系统给客户出报价" />
+                  </el-form-item>
+                </el-form>
+                <div class="lcm-tip lcm-tip-warn">
+                  ⓘ 提交后您将<strong>无法立即登录</strong>,必须等管理员审批通过. 通常 1 个工作日内回复.
+                </div>
+                <div v-if="regError" class="lcm-error">⚠ {{ regError }}</div>
+                <div v-if="regSuccess" class="lcm-tip lcm-tip-success">✓ {{ regSuccess }}</div>
+                <div class="lcm-actions">
+                  <button v-if="!regSuccess" type="button" class="lcm-btn lcm-btn-secondary" @click="regPublicStep=2; regError=''">← 上一步</button>
+                  <button v-if="!regSuccess" type="button" class="lcm-btn lcm-btn-success" :disabled="regLoading" @click="submitRegisterPublic">
+                    {{ regLoading ? '提交中...' : '✓ 提交申请' }}
+                  </button>
+                  <button v-if="regSuccess" type="button" class="lcm-btn lcm-btn-primary" @click="resetAuthFlow">
+                    返回登录页
+                  </button>
+                </div>
+              </template>
+            </div>
+          </template>
+
+        </div>
+      </div>
+
+      <el-tabs v-show="authenticated" v-model="activeTab" class="main-tabs" type="border-card">
+        <!-- ============= Tab 1 · 报价生成 ============= -->
+        <el-tab-pane label="📝 生成报价" name="quote">
+          <quote-builder
+            :destinations="destinations"
+            :hotels="hotels" :attractions="attractions" :restaurants="restaurants"
+            :vehicles="vehicles" :guides="guides" :templates="templates"
+            :spas="spas" :waters="waters" :teas="teas" :optionals="optionals"
+            @saved="onQuoteSaved"></quote-builder>
+        </el-tab-pane>
+
+        <!-- ============= Tab 2 · 资源库 ============= -->
+        <el-tab-pane label="🗂 资源库" name="resources">
+          <resource-manager
+            :destinations="destinations"
+            @refresh="loadAllResources"></resource-manager>
+        </el-tab-pane>
+
+        <!-- ============= Tab 3 · AI 文档采集 ============= -->
+        <el-tab-pane label="🤖 AI 文档采集" name="ai">
+          <ai-uploader @confirmed="loadAllResources"></ai-uploader>
+        </el-tab-pane>
+
+        <!-- ============= Tab 4 · 一日游模板 ============= -->
+        <el-tab-pane label="🗺 一日游模板" name="templates">
+          <template-manager
+            :destinations="destinations"
+            :attractions="attractions"
+            :restaurants="restaurants"
+            @refresh="loadTemplates"></template-manager>
+        </el-tab-pane>
+
+        <!-- ============= Tab 5 · 设置 ============= -->
+        <el-tab-pane label="⚙️ 设置" name="settings">
+          <settings-panel @rate-changed="loadRate"></settings-panel>
+        </el-tab-pane>
+
+        <!-- ============= Tab 6 · 报价历史 ============= -->
+        <el-tab-pane label="📋 报价历史" name="history">
+          <quote-history :destinations="destinations"></quote-history>
+        </el-tab-pane>
+      </el-tabs>
+
+      <footer class="app-footer">
+        <span>© BWS Travel · 预报价系统 v0.8.4 · {{ today }}</span>
+      </footer>
+    </div>
+  </el-config-provider>
+</div>
+
+<script src="/static/vendor/vue.global.prod.js"></script>
+<script src="/static/vendor/element-plus.full.min.js"></script>
+<script src="/static/vendor/element-plus-zh-cn.min.js"></script>
+<script src="/static/vendor/element-plus-icons.iife.min.js"></script>
+<script src="/static/vendor/axios.min.js"></script>
+<script src="/static/js/components.js?v=14"></script>
+<script src="/static/js/app.js?v=14"></script>
+</body>
+</html>
