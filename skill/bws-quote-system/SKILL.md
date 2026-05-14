@@ -659,3 +659,69 @@ printf '\xEF\xBB\xBF' > tmp; cat file.ps1 >> tmp; mv tmp file.ps1
    - P0: AI 真接 Anthropic 测一份真行程
    - P1: 加 Alembic 替代 ALTER TABLE
    - P1: Playwright E2E 测试
+
+---
+
+## 十四、bws CLI 工具 (2026-05-14)
+
+### 入口
+
+- venv 已激活: `bws <group> <action>`
+- 任意目录: `预报价系统B端版本\bws.bat <group> <action>` (纯 ASCII,中文 Windows cmd 友好)
+- 模块直调: `python -m app.cli <group> <action>` (PYTHONPATH 含 `backend/`)
+
+### 命令矩阵
+
+```
+bws quote   list [-n] [--agency]        列报价单
+            show <id>                   报价单详情
+            calc <id> [--save]          重算成本+逐日明细 (复用 pricing_engine.calculate)
+bws data    import [--apply] [--only]   调 scripts/import_bali_data.py
+            export [path]               sqlite3.iterdump → SQL 文件
+            backup [--tag]              DB 复制到 backend/data/backups/
+            restore <file> [--yes]      自动备份旧 DB 后恢复
+bws server  start [--no-reload]         前台 uvicorn (cwd=backend/)
+            status                      探活 /api/v1/health
+            stop [--yes]                netstat 找 PID → taskkill /F
+bws db      init [--no-seed]            seed_all 或纯建表
+            migrate                     占位 (Alembic 上线后启用)
+            query "<SELECT...>" [-n]    只读 SQL, 写动词自动拒
+            stats                       各表行数
+```
+
+### 文件布局
+
+```
+预报价系统B端版本/
+├── pyproject.toml        ← entry_point: bws = app.cli:main
+├── bws.bat               ← 纯 ASCII 包装器
+└── backend/app/cli/
+    ├── __init__.py       ← argparse 顶层 + UTF-8 stdio fix
+    ├── _common.py        ← print_table / confirm
+    ├── quote_cmd.py
+    ├── data_cmd.py
+    ├── server_cmd.py
+    └── db_cmd.py
+```
+
+### 安装
+
+```powershell
+$env:PYTHONIOENCODING="utf-8"
+.\.venv\Scripts\python.exe -m pip install -e .
+# 之后 .venv\Scripts\bws.exe 就可用
+```
+
+### 设计取舍
+
+- **零新依赖** — argparse + 标准库 (sqlite3 / urllib / subprocess / socket / shutil)。typer + rich 是下次"开发体验升级"再加的事
+- **写 SQL 兜底拒绝** — 前缀匹配 insert/update/delete/drop/alter/create/truncate/replace,要写就连 sqlite3 cli
+- **退码语义** (下次统一前先记着):0 成功 / 1 业务错误 / 2 参数错误 / 130 Ctrl+C
+- **.bat 纯 ASCII** — Write 工具默认 UTF-8,但 Windows cmd 在中文系统下按 GBK 解,中文会乱码。.bat / .ps1 注释和 echo 都用英文,中文留在 .py
+
+### 已知未做
+
+- CLI 单元测试 (subprocess + 临时 SQLite fixture)
+- `bws quote calc --save` 现在只回写 cost_*,profit 派生字段没更新,建议改走 routers/quotes.py 完整 recalc
+- `bws data import` 输出不结构化,cron 场景需要 JSON summary
+- 与 scripts/start.bat 的整合 (`bws.bat dev` = init + start)

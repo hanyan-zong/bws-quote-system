@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bws-quote"
+version = "0.8.4"
+description = "BWS 预报价系统 — B 端 SaaS"
+requires-python = ">=3.12"
+readme = "README.md"
+
+[project.scripts]
+bws = "app.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "backend"}
+
+[tool.setuptools.packages.find]
+where = ["backend"]
+include = ["app*"]
+exclude = ["tests*"]
