@@ -1,10 +1,8 @@
 @echo off
-REM BWS 预报价系统启动 (Windows)
+REM BWS Quote System Launcher (Windows) - v0.9
 cd /d "%~dp0\.."
-echo [1/3] 检查依赖...
+echo [1/2] Install Python deps + bws entry point
 pip install -q -r backend\requirements.txt
-echo [2/3] 初始化数据库...
-python scripts\init_db.py
-echo [3/3] 启动后端 (http://localhost:8000) ...
-cd backend
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+pip install -q -e .
+echo [2/2] bws dev (init + alembic migrate + uvicorn on :8000)
+bws dev --no-reload --no-seed

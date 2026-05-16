@@ -31,7 +31,8 @@ WORKDIR /app
 
 # 先装依赖 (利用 layer cache)
 COPY backend/requirements.txt /app/backend/requirements.txt
-RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt \
+    && pip install --no-cache-dir alembic
 
 # 复制应用代码
 COPY backend /app/backend
@@ -39,6 +40,10 @@ COPY frontend /app/frontend
 COPY scripts /app/scripts
 COPY docs /app/docs
 COPY README.md /app/
+COPY pyproject.toml /app/
+
+# 装 bws CLI entry point (v0.9: bws dev 一键 init+migrate+uvicorn)
+RUN pip install --no-cache-dir --no-deps -e /app/
 
 # 创建运行时所需目录
 RUN mkdir -p /app/backend/data /app/uploads /app/logs
@@ -49,22 +54,18 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 
 EXPOSE 8000
 
-# 入口脚本: 先 init_db (幂等) 再起 uvicorn
+# v0.9 entrypoint: bws dev 一键 init+migrate+uvicorn (取代旧的 init_db.py + uvicorn 两步)
 COPY <<'EOF' /app/entrypoint.sh
 #!/bin/bash
 set -e
 
-echo "==> [1/2] 初始化数据库 (幂等)..."
-cd /app
-python scripts/init_db.py || echo "    (DB 已存在, 跳过 seed)"
-
-echo "==> [2/2] 启动 uvicorn..."
-echo "   API 文档: http://localhost:8000/docs"
-echo "   思维导图: http://localhost:8000/mindmap"
-echo "   AI: ${ANTHROPIC_API_KEY:+已配置 ✓}${ANTHROPIC_API_KEY:-MOCK 模式}"
+echo "==> BWS v0.9 — bws dev (init + alembic migrate + uvicorn)"
+echo "   API: http://localhost:8000/docs"
+echo "   Mindmap: http://localhost:8000/mindmap"
+echo "   AI: ${ANTHROPIC_API_KEY:+REAL claude}${ANTHROPIC_API_KEY:-MOCK mode}"
 
 cd /app/backend
-exec python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+exec bws dev --no-reload --no-seed --host 0.0.0.0 --port 8000
 EOF
 RUN chmod +x /app/entrypoint.sh
 

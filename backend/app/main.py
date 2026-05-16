@@ -35,7 +35,7 @@ logger = logging.getLogger("bws.main")
 def create_app() -> FastAPI:
     app = FastAPI(
         title="BWS 预报价系统 · B 端",
-        version="0.8.4",
+        version="0.9.0",
         description="面向同业旅行社的智能预报价系统 — 强制账号系统 + 多步注册向导 + 自助审核 + 5 角色权限 + 功能配额 + AI 一键上传行程报价 + 资源库 + 行程组合 + 合理性校验 + 赌自费(铁律+5维度) + 三件套导出 + 反馈回写",
     )
 
@@ -103,8 +103,8 @@ def create_app() -> FastAPI:
     def health():
         return {
             "ok": True,
-            "version": "0.8.4",
-            "version_label": "v0.8.4 · 企业级 Header + 直接添加用户",
+            "version": "0.9.0",
+            "version_label": "v0.9.0 · CLI 体系工程化 + Alembic + 30 测试",
             "ai_available": settings.ai_available,
             "ai_model": settings.anthropic_model if settings.ai_available else "mock",
         }

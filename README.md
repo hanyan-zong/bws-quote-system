@@ -1,10 +1,11 @@
 # BWS 预报价系统 · B 端版本
 
-> 面向同业旅行社的智能预报价系统 · **v0.8.4**
-> 技术栈:FastAPI + Vue 3 + SQLite + Claude AI
+> 面向同业旅行社的智能预报价系统 · **v0.9.0**
+> 技术栈:FastAPI + Vue 3 + SQLite + Alembic + Claude AI
 
-[![Version](https://img.shields.io/badge/version-0.8.4-blue.svg)]()
-[![Python](https://img.shields.io/badge/python-3.11-blue.svg)]()
+[![Version](https://img.shields.io/badge/version-0.9.0-blue.svg)]()
+[![Python](https://img.shields.io/badge/python-3.12-blue.svg)]()
+[![Tests](https://img.shields.io/badge/tests-30%20passing-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/license-Private-red.svg)]()
 
 ---
