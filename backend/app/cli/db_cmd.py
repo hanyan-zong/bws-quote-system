@@ -12,7 +12,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     p_init.add_argument("--no-seed", action="store_true", help="只建表, 不写样本数据")
     p_init.set_defaults(_handler=_cmd_init)
 
-    p_mig = sub.add_parser("migrate", help="(占位) Alembic 上线后执行迁移")
+    p_mig = sub.add_parser("migrate", help="跑 alembic upgrade head — 真升级 schema")
+    p_mig.add_argument("--revision", default="head", help="目标版本 (默认 head)")
     p_mig.set_defaults(_handler=_cmd_migrate)
 
     p_query = sub.add_parser("query", help="执行只读 SQL")
@@ -38,8 +39,25 @@ def _cmd_init(args: argparse.Namespace) -> int:
 
 
 def _cmd_migrate(args: argparse.Namespace) -> int:
-    print("Alembic 尚未启用 — 当前依赖 database.init_db() 的 ALTER TABLE 兼容层")
-    print("→ 用 'bws db init --no-seed' 触发增量加列")
+    from pathlib import Path
+
+    from alembic import command
+    from alembic.config import Config
+
+    from ..config import BACKEND_DIR
+    from ._common import BusinessError
+
+    ini = BACKEND_DIR / "alembic.ini"
+    if not ini.exists():
+        raise BusinessError(f"找不到 alembic.ini: {ini}")
+    cfg = Config(str(ini))
+    # 让 env.py 里 `Path(__file__).resolve().parent.parent` 指对位置
+    cfg.set_main_option("script_location", str(BACKEND_DIR / "migrations"))
+    try:
+        command.upgrade(cfg, args.revision)
+    except Exception as exc:
+        raise BusinessError(f"alembic upgrade 失败: {exc}") from exc
+    print(f"已升级到 {args.revision}")
     return 0
 
 
@@ -52,9 +70,11 @@ def _cmd_query(args: argparse.Namespace) -> int:
     sql_stripped = args.sql.strip().lower()
     write_verbs = ("insert", "update", "delete", "drop", "alter", "create", "truncate", "replace")
     if any(sql_stripped.startswith(v) for v in write_verbs):
-        print(f"拒绝执行写操作: {sql_stripped.split()[0]}")
-        print("如需写操作, 直接连 sqlite3 backend/data/bws_quote.db")
-        return 1
+        from ._common import UsageError
+        verb = sql_stripped.split()[0]
+        raise UsageError(
+            f"拒绝执行写操作: {verb}. 如需写操作, 直接连 sqlite3 backend/data/bws_quote.db"
+        )
 
     db = SessionLocal()
     try:

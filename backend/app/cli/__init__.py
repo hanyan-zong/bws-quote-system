@@ -12,7 +12,8 @@ import argparse
 import os
 import sys
 
-from . import data_cmd, db_cmd, quote_cmd, server_cmd
+from . import data_cmd, db_cmd, dev_cmd, quote_cmd, server_cmd
+from ._common import CliError
 
 
 def _ensure_utf8_stdio() -> None:
@@ -37,6 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
     data_cmd.register(subparsers)
     server_cmd.register(subparsers)
     db_cmd.register(subparsers)
+    dev_cmd.register(subparsers)
 
     return parser
 
@@ -57,13 +59,12 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("\n[中断]", file=sys.stderr)
         return 130
+    except CliError as exc:
+        print(f"[{type(exc).__name__}] {exc}", file=sys.stderr)
+        return exc.exit_code
     except Exception as exc:
         print(f"[错误] {type(exc).__name__}: {exc}", file=sys.stderr)
         if os.environ.get("BWS_CLI_DEBUG"):
             raise
         return 1
     return int(rc or 0)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

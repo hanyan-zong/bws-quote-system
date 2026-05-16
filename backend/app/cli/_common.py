@@ -1,7 +1,32 @@
-"""CLI 共用工具."""
+"""CLI 共用工具.
+
+退码语义 (全 CLI 统一):
+    0   成功
+    1   业务错误 (找不到对象 / 文件不存在 / 远端不可达 / 操作被拒)
+    2   用法错误 (参数缺失 / 类型错 / 不允许的输入, argparse 也用 2)
+    130 用户 Ctrl+C 中断
+"""
 from __future__ import annotations
 
 from typing import Iterable, Sequence
+
+
+class CliError(Exception):
+    """所有 CLI 退码异常的基类. handler 抛它会被 main() 翻成对应退码."""
+
+    exit_code: int = 1
+
+
+class BusinessError(CliError):
+    """业务侧错误 — 退码 1. 用于: 找不到记录, 文件不存在, 远端 503 等."""
+
+    exit_code = 1
+
+
+class UsageError(CliError):
+    """用法错误 — 退码 2. 用于: 用户传了不允许的参数 (比如写 SQL 给 db query)."""
+
+    exit_code = 2
 
 
 def print_table(headers: Sequence[str], rows: Iterable[Sequence[object]]) -> None:

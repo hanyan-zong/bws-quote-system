@@ -11,6 +11,7 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError
 
 from ..config import PROJECT_ROOT
+from ._common import BusinessError
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -36,8 +37,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 def _cmd_start(args: argparse.Namespace) -> int:
     if _port_in_use(args.host if args.host != "0.0.0.0" else "127.0.0.1", args.port):
-        print(f"端口 {args.port} 已被占用 — 服务可能已在运行 (bws server status 验证)")
-        return 1
+        raise BusinessError(
+            f"端口 {args.port} 已被占用 — 服务可能已在运行 (bws server status 验证)"
+        )
     cmd = [
         sys.executable, "-m", "uvicorn", "app.main:app",
         "--host", args.host, "--port", str(args.port),
@@ -61,8 +63,7 @@ def _cmd_status(args: argparse.Namespace) -> int:
         print(body)
         return 0
     except URLError as e:
-        print(f"不可达  {url}  → {e}")
-        return 1
+        raise BusinessError(f"不可达 {url} → {e}")
 
 
 def _cmd_stop(args: argparse.Namespace) -> int:

@@ -4,7 +4,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Iterator
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import settings
@@ -48,44 +48,15 @@ def session_scope() -> Iterator[Session]:
 
 
 def init_db() -> None:
-    """建表(不删数据)+ 兼容性 ALTER TABLE 加新列(SQLite v0.2 没有 Alembic)."""
+    """建表 (Base.metadata.create_all, idempotent) + 自举 super_admin.
+
+    2026-05-16 起 schema 变更**只走 alembic**:
+      - 新增字段: 改 ORM 模型 → `alembic revision --autogenerate -m "..."` → `bws db migrate`
+      - 老 v0.7 → v0.8 的 ALTER 兼容列表已删除. 本仓库实际使用场景是单一用户单一 DB
+        (已跑过所有 ALTER), 第三方从 v0.7 升级请走 alembic baseline + 写 0001 迁移.
+    """
     from . import models  # noqa: F401  确保模型都注册
-
     Base.metadata.create_all(bind=engine)
-
-    # 增量加列(已存在会忽略错误)— v0.3+ 上 Alembic 后删除
-    additive_columns = [
-        ("quotes", "arrival_at",         "DATETIME"),
-        ("quotes", "departure_at",       "DATETIME"),
-        ("quotes", "arrival_airport",    "VARCHAR(8)"),
-        ("quotes", "departure_airport",  "VARCHAR(8)"),
-        # v0.4 多用户:
-        ("quotes", "created_by_user_id", "INTEGER"),
-        ("quotes", "agency_id",          "INTEGER"),
-        # v0.5 赌自费回写闭环:
-        ("gamble_history", "strategy_id",     "INTEGER"),
-        ("gamble_history", "feedback_notes",  "TEXT"),
-        ("gamble_history", "feedback_at",     "DATETIME"),
-        ("gamble_history", "feedback_by",     "INTEGER"),
-        # v0.5.1 简化策略 — skip 命中后反向加利润:
-        ("gamble_strategies", "extra_profit_cny", "NUMERIC(10,2) DEFAULT 0"),
-        # v0.5.2 赌自费 5 维度细分 — 老年人字段:
-        ("quotes", "pax_senior", "INTEGER DEFAULT 0"),
-        # v0.8 自助注册 + 审核
-        ("users", "application_note",     "TEXT"),
-        ("users", "requested_agency_name","VARCHAR(120)"),
-        ("users", "review_note",          "TEXT"),
-        ("users", "reviewed_by_user_id",  "INTEGER"),
-        ("users", "reviewed_at",          "DATETIME"),
-    ]
-    with engine.begin() as conn:
-        for table, col, sql_type in additive_columns:
-            try:
-                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {sql_type}"))
-            except Exception:
-                pass  # 列已存在
-
-    # v0.8.1 — 启动时确保至少存在一个 super_admin (从 .env 兜底)
     _ensure_bootstrap_admin()
 
 

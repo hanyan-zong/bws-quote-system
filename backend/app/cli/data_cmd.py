@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -9,7 +11,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from ..config import DATA_DIR, PROJECT_ROOT
+from ..config import DATA_DIR, PROJECT_ROOT, settings
+from ._common import BusinessError, UsageError
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -20,6 +23,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     p_imp.add_argument("--apply", action="store_true", help="真写入 (默认 dry-run)")
     p_imp.add_argument("--base", default="http://localhost:8000", help="后端 base URL")
     p_imp.add_argument("--only", nargs="+", help="只导入指定类别: attractions hotels vehicles ...")
+    p_imp.add_argument("--json", action="store_true", help="只输出 JSON 汇总 (机读, 用于 cron / 上游集成)")
     p_imp.set_defaults(_handler=_cmd_import)
 
     p_exp = sub.add_parser("export", help="导出 SQLite 为 SQL dump")
@@ -37,7 +41,14 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _db_path() -> Path:
-    return DATA_DIR / "bws_quote.db"
+    """从 settings.database_url 解析 sqlite 文件路径. 非 sqlite 直接拒绝."""
+    url = settings.database_url
+    prefix = "sqlite:///"
+    if not url.startswith(prefix):
+        raise UsageError(
+            f"data export/backup/restore 只支持 sqlite — 当前 BWS_DATABASE_URL={url}"
+        )
+    return Path(url[len(prefix):])
 
 
 def _backup_dir() -> Path:
@@ -49,22 +60,59 @@ def _backup_dir() -> Path:
 def _cmd_import(args: argparse.Namespace) -> int:
     script = PROJECT_ROOT / "scripts" / "import_bali_data.py"
     if not script.exists():
-        print(f"找不到导入脚本: {script}")
-        return 1
+        raise BusinessError(f"找不到导入脚本: {script}")
     cmd = [sys.executable, str(script), "--base", args.base]
     if args.apply:
         cmd.append("--apply")
     if args.only:
         cmd.extend(["--only", *args.only])
-    print(f"运行: {' '.join(cmd)}")
-    return subprocess.call(cmd)
+
+    if not args.json:
+        print(f"运行: {' '.join(cmd)}")
+        return subprocess.call(cmd)
+
+    # JSON 模式: 捕获 stdout, 解析汇总块, 打印结构化结果
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    summary = _parse_import_summary(proc.stdout)
+    out = {
+        "returncode": proc.returncode,
+        "apply": bool(args.apply),
+        "categories": summary,
+    }
+    if not summary:
+        out["raw_output"] = proc.stdout
+    if proc.stderr:
+        out["stderr"] = proc.stderr
+    print(json.dumps(out, ensure_ascii=False, indent=2))
+    return proc.returncode
+
+
+_SUMMARY_LINE_RE = re.compile(
+    r"^\s+(\S+)\s*:\s*parsed=\s*(\d+)\s+ok=\s*(\d+)\s+fail=\s*(\d+)\s*$"
+)
+
+
+def _parse_import_summary(stdout: str) -> dict[str, dict[str, int]]:
+    """从 import_bali_data.py 的输出里抓最后那块 '汇总:' 表."""
+    out: dict[str, dict[str, int]] = {}
+    in_block = False
+    for line in stdout.splitlines():
+        if line.strip().startswith("汇总"):
+            in_block = True
+            continue
+        if not in_block:
+            continue
+        m = _SUMMARY_LINE_RE.match(line)
+        if m:
+            kind, parsed, ok, fail = m.group(1), int(m.group(2)), int(m.group(3)), int(m.group(4))
+            out[kind] = {"parsed": parsed, "ok": ok, "fail": fail}
+    return out
 
 
 def _cmd_export(args: argparse.Namespace) -> int:
     db = _db_path()
     if not db.exists():
-        print(f"DB 不存在: {db}")
-        return 1
+        raise BusinessError(f"DB 不存在: {db}")
     out = Path(args.output) if args.output else Path.cwd() / f"bws_export_{_ts()}.sql"
     conn = sqlite3.connect(str(db))
     try:
@@ -80,8 +128,7 @@ def _cmd_export(args: argparse.Namespace) -> int:
 def _cmd_backup(args: argparse.Namespace) -> int:
     db = _db_path()
     if not db.exists():
-        print(f"DB 不存在: {db}")
-        return 1
+        raise BusinessError(f"DB 不存在: {db}")
     tag = args.tag or _ts()
     dest = _backup_dir() / f"bws_quote_{tag}.db"
     shutil.copy2(db, dest)
@@ -95,8 +142,7 @@ def _cmd_restore(args: argparse.Namespace) -> int:
     if not src.is_absolute():
         src = _backup_dir() / args.backup_file
     if not src.exists():
-        print(f"备份文件不存在: {src}")
-        return 1
+        raise BusinessError(f"备份文件不存在: {src}")
 
     if not args.yes:
         print(f"即将用 {src} 覆盖 {db}")

@@ -54,13 +54,13 @@ def _cmd_list(args: argparse.Namespace) -> int:
 def _cmd_show(args: argparse.Namespace) -> int:
     from .. import models
     from ..database import SessionLocal
+    from ._common import BusinessError
 
     db = SessionLocal()
     try:
         quote = db.get(models.Quote, args.quote_id)
         if not quote:
-            print(f"找不到 quote id={args.quote_id}")
-            return 1
+            raise BusinessError(f"找不到 quote id={args.quote_id}")
         _print_quote(quote)
     finally:
         db.close()
@@ -71,13 +71,23 @@ def _cmd_calc(args: argparse.Namespace) -> int:
     from .. import models
     from ..database import session_scope
     from ..utils.pricing_engine import calculate
+    from ..utils.quote_recalc import recalc_quote
+    from ._common import BusinessError
 
     with session_scope() as db:
         quote = db.get(models.Quote, args.quote_id)
         if not quote:
-            print(f"找不到 quote id={args.quote_id}")
-            return 1
-        breakdown = calculate(quote, db)
+            raise BusinessError(f"找不到 quote id={args.quote_id}")
+
+        # --save 走完整 recalc (cost + feasibility + gamble + profit + price + GambleHistory),
+        # 与 web 端 routers/quotes.py::calculate_quote 完全一致;
+        # 不带 --save 只做 dry-run 计价拆解, 不改任何字段.
+        if args.save:
+            result = recalc_quote(quote, db)
+            breakdown = result.breakdown
+        else:
+            breakdown = calculate(quote, db)
+
         print(f"报价单 {quote.quote_no}  ({quote.total_days} 天 · {quote.season})")
         print(f"  成本合计  : {breakdown.cost_idr_total} IDR  /  {breakdown.cost_cny_total} CNY")
         print(f"  人均成本  : {breakdown.per_pax_idr} IDR  /  {breakdown.per_pax_cny} CNY")
@@ -87,10 +97,15 @@ def _cmd_calc(args: argparse.Namespace) -> int:
             print(f"    Day {day['day_index']}{free}: {day['cost_idr']} IDR / {day['cost_cny']} CNY")
             for d in day["details"]:
                 print(f"      · {d}")
+
         if args.save:
-            quote.cost_idr_total = breakdown.cost_idr_total
-            quote.cost_cny_total = breakdown.cost_cny_total
-            print("  [已回写 cost_idr_total / cost_cny_total]")
+            print("  [已保存完整 recalc]")
+            print(f"    cost_cny_total       : {quote.cost_cny_total}")
+            print(f"    profit_cny_per_pax   : {quote.profit_cny_per_pax}")
+            print(f"    gamble_cny_per_pax   : {quote.gamble_cny_per_pax}")
+            print(f"    price_cny_per_pax    : {quote.price_cny_per_pax}")
+            print(f"    price_cny_total      : {quote.price_cny_total}")
+            print(f"    feasibility_status   : {quote.feasibility_status}")
     return 0
 
 

@@ -662,31 +662,32 @@ printf '\xEF\xBB\xBF' > tmp; cat file.ps1 >> tmp; mv tmp file.ps1
 
 ---
 
-## 十四、bws CLI 工具 (2026-05-14)
+## 十四、bws CLI 工具 (2026-05-14 / 2026-05-16 P0 加测试套件 + 退码统一)
 
 ### 入口
 
 - venv 已激活: `bws <group> <action>`
 - 任意目录: `预报价系统B端版本\bws.bat <group> <action>` (纯 ASCII,中文 Windows cmd 友好)
-- 模块直调: `python -m app.cli <group> <action>` (PYTHONPATH 含 `backend/`)
+- 模块直调: `python -m app.cli <group> <action>` (cwd=backend/;2026-05-16 起需要 `__main__.py`,之前是死代码)
 
 ### 命令矩阵
 
 ```
 bws quote   list [-n] [--agency]        列报价单
             show <id>                   报价单详情
-            calc <id> [--save]          重算成本+逐日明细 (复用 pricing_engine.calculate)
-bws data    import [--apply] [--only]   调 scripts/import_bali_data.py
-            export [path]               sqlite3.iterdump → SQL 文件
-            backup [--tag]              DB 复制到 backend/data/backups/
-            restore <file> [--yes]      自动备份旧 DB 后恢复
+            calc <id> [--save]          dry-run 拆解; --save 走完整 recalc (utils/quote_recalc) — cost/feasibility/gamble/profit/price 一并落库,与 web 端 routers/quotes.py::calculate_quote 一致
+bws data    import [--apply] [--only] [--json]   调 scripts/import_bali_data.py; --json 输出结构化汇总 (cron/上游集成)
+            export [path]               sqlite3.iterdump → SQL 文件 (读 settings.database_url)
+            backup [--tag]              DB 复制到 backend/data/backups/ (读 settings.database_url)
+            restore <file> [--yes]      自动备份旧 DB 后恢复 (读 settings.database_url)
 bws server  start [--no-reload]         前台 uvicorn (cwd=backend/)
             status                      探活 /api/v1/health
             stop [--yes]                netstat 找 PID → taskkill /F
-bws db      init [--no-seed]            seed_all 或纯建表
-            migrate                     占位 (Alembic 上线后启用)
+bws db      init [--no-seed]            create_all + 自举 admin (2026-05-16 起 ALTER 列表删, schema 变更走 alembic)
+            migrate [--revision head]   alembic upgrade (2026-05-16 起真生效)
             query "<SELECT...>" [-n]    只读 SQL, 写动词自动拒
             stats                       各表行数
+bws dev     [--no-server] [--no-seed]   一键: init + migrate + uvicorn 前台 (取代 scripts/start.bat 的 step 2+3)
 ```
 
 ### 文件布局
@@ -695,13 +696,24 @@ bws db      init [--no-seed]            seed_all 或纯建表
 预报价系统B端版本/
 ├── pyproject.toml        ← entry_point: bws = app.cli:main
 ├── bws.bat               ← 纯 ASCII 包装器
-└── backend/app/cli/
-    ├── __init__.py       ← argparse 顶层 + UTF-8 stdio fix
-    ├── _common.py        ← print_table / confirm
-    ├── quote_cmd.py
-    ├── data_cmd.py
-    ├── server_cmd.py
-    └── db_cmd.py
+├── backend/app/cli/
+│   ├── __init__.py       ← argparse 顶层 + UTF-8 stdio fix + CliError 翻译
+│   ├── __main__.py       ← 2026-05-16 新增, 支持 python -m app.cli
+│   ├── _common.py        ← print_table / confirm / CliError/BusinessError/UsageError + 退码 SSOT 注释
+│   ├── quote_cmd.py
+│   ├── data_cmd.py
+│   ├── server_cmd.py
+│   ├── db_cmd.py
+│   └── dev_cmd.py        ← 2026-05-16 新增, bws dev 一键启动
+└── backend/tests/        ← 2026-05-16 新增, pytest 30 用例
+    ├── conftest.py       ← bws / seed_quote fixtures
+    ├── test_cli_smoke.py
+    ├── test_cli_db.py
+    ├── test_cli_data.py
+    ├── test_cli_data_import_json.py
+    ├── test_cli_quote.py
+    ├── test_cli_server.py
+    └── test_cli_dev.py
 ```
 
 ### 安装
@@ -714,14 +726,33 @@ $env:PYTHONIOENCODING="utf-8"
 
 ### 设计取舍
 
-- **零新依赖** — argparse + 标准库 (sqlite3 / urllib / subprocess / socket / shutil)。typer + rich 是下次"开发体验升级"再加的事
-- **写 SQL 兜底拒绝** — 前缀匹配 insert/update/delete/drop/alter/create/truncate/replace,要写就连 sqlite3 cli
-- **退码语义** (下次统一前先记着):0 成功 / 1 业务错误 / 2 参数错误 / 130 Ctrl+C
-- **.bat 纯 ASCII** — Write 工具默认 UTF-8,但 Windows cmd 在中文系统下按 GBK 解,中文会乱码。.bat / .ps1 注释和 echo 都用英文,中文留在 .py
+- **生产新依赖** — 2026-05-16 加 `alembic`(为 schema 迁移)+ `Mako`(alembic 传递依赖);**pytest 仅测试用,未进 pyproject**
+- **写 SQL 兜底拒绝** — 前缀匹配 insert/update/delete/drop/alter/create/truncate/replace,要写就连 sqlite3 cli;**触发 UsageError(2)**
+- **退码语义 SSOT** 在 `_common.py` 顶部:0 成功 / 1 业务错误 (BusinessError) / 2 用法错误 (UsageError, argparse 同号) / 130 Ctrl+C
+- **handler 抛异常而不是 return** — `raise BusinessError("...")` / `raise UsageError("...")`,`__init__.main()` 统一翻退码 + 打 stderr 带类型前缀
+- **.bat 纯 ASCII** — Write 工具默认 UTF-8,但 Windows cmd 在中文系统下按 GBK 解,中文会乱码
 
-### 已知未做
+### 测试
 
-- CLI 单元测试 (subprocess + 临时 SQLite fixture)
-- `bws quote calc --save` 现在只回写 cost_*,profit 派生字段没更新,建议改走 routers/quotes.py 完整 recalc
-- `bws data import` 输出不结构化,cron 场景需要 JSON summary
-- 与 scripts/start.bat 的整合 (`bws.bat dev` = init + start)
+- 位置: `backend/tests/test_cli_*.py`,共 27 用例
+- 跑法: `.venv\Scripts\python.exe -m pytest backend/tests/ -v` (约 24s)
+- 模式: subprocess 黑盒 + `tmp_path` 下临时 SQLite (通过 `BWS_DATABASE_URL` 切换),`conftest.py` 提供 `bws` runner + `seed_quote` fixture
+
+### 2026-05-16 修的 3 个真 bug
+
+1. `app/cli/__main__.py` 缺失 → `python -m app.cli` 跑不通(`__init__.py` 里 `if __name__ == "__main__"` 是死代码)
+2. `data_cmd._db_path()` 硬编码 → 即使设了 `BWS_DATABASE_URL`,backup/export/restore 仍偷偷操作主库;现已改读 `settings.database_url`(非 sqlite 抛 UsageError)
+3. `utils/quote_recalc.recalc_quote` v0.9.0 抽出来号称"router 与 CLI 共用",但 CLI 一直没接通;现已真正接通
+
+### Alembic (2026-05-16 接入)
+
+- `backend/alembic.ini` + `backend/migrations/env.py`(env.py 读 `settings.database_url` SSOT,sqlite 自动 `render_as_batch=True`)
+- 基线: `migrations/versions/0000_baseline.py` 是**空迁移**(upgrade/downgrade 都 pass)— 表示"2026-05-16 时 `init_db()` 能建出的 schema 就是 v0 基线"
+- **生产 DB 一次性**: `python -m alembic stamp 0000_baseline`(创建 `alembic_version` 表,标记已在基线);之后 `bws db migrate` 才会跑 0001+ 的真迁移
+- 新增字段/改表: 改 ORM 模型 → `python -m alembic revision --autogenerate -m "..."` → 人工核对 → `bws db migrate`
+- 详细操作手册 `backend/migrations/README.md`
+- alembic.ini 注释必须 ASCII (configparser 在 Windows 用 GBK 读, 中文会爆 UnicodeDecodeError)
+
+### 已知未做(真要做需专项立项)
+
+- **彻底走 alembic 唯一 schema 来源**:当前 `init_db` 仍 `create_all` 建表(ALTER 列表已删,新字段走 alembic);真正"alembic 唯一"需要 autogenerate 0001 反映完整 v0.8.x schema + 改 `init_db` 为 "alembic upgrade head" + 探测无 `alembic_version` 表时自动 stamp。sqlite autogenerate 假阳性需要逐条人工核对,工期 1-2 小时
