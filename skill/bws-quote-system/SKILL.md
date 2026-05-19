@@ -231,6 +231,7 @@ docker compose logs -f bws-quote
 | v0.5 待 | TBD | APScheduler ERP worker + Alembic 迁移 + 报价导出 PDF/Excel/Word + 前端 admin 面板 |
 | v0.9.0 | 2026-05-16 | CLI 体系工程化 (4 命令组 + bws dev 一键启动) + Alembic 接入 + pytest 双轨 44 用例 (CLI subprocess + Web TestClient) + datetime.utcnow() 全替换为 now_utc() |
 | **v0.9.1** | **2026-05-19** | **赌自费策略数据对齐 + legacy 清理 + 普通用户 UI 隔离**:DB gamble_strategies 补到 12 条 v0.5.2 业务对齐版 (8 老 soft-disabled);删 _check_no_gamble_rules 函数 + 兜底分支 + 3 CRUD 端点 + UI legacy 卡片 + ruleDialog 弹窗 + 6 methods;前端 main-tabs 加 isAdmin gate (agent/viewer 只看报价 + 历史);FastAPI on_event → lifespan 消 4 warning;seed._seed_gamble_strategies 改 idempotent + database.init_db 加同步钩子 |
+| **v0.9.2** | **2026-05-19** | **后端 routers 权限 gate** — 堵住 agent 越权写资源/模板/设置漏洞:routers 接入 `dependencies=[Depends(require_role(...))]`. resources 14 写端点 + templates 3 写端点 → super_admin/ops_manager;settings 10 写端点 (汇率/时间预算/赌自费配置/区域规则/景点互斥/策略/迁移) → super_admin only;GET 全部保留开放(报价流程需读)。**bug**: utils/permissions.require_role factory 的 `db: Session` 缺 `Depends(get_db)` 导致 FastAPI 报 "Invalid args for response field",修复后 59 PASS。新建 backend/tests/web/test_admin_gate.py 15 用例 (agent 9 个 403 写 + 5 个 200 读 + 1 admin 回归)。conftest 加 `_agent_user` (session) + `agent_client` fixture |
 
 ---
 
