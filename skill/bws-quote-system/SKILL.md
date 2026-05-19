@@ -229,6 +229,8 @@ docker compose logs -f bws-quote
 | **v0.3** | **2026-05-07** | **赌自费策略重设计** — 单表 `GambleStrategy` 替代 `NoGambleRule`+复杂算法。每条策略 = 一种行程组合 + 对应让利金额(skip/fixed/per_pax)。引擎按 priority 倒序评估,首条命中即停。Settings 加 "💰 赌自费策略" + "🔍 案例编辑器/预览" + "↻ 从旧规则迁移" 按钮。8 条 seed 策略覆盖典型场景。老 `NoGambleRule` 表保留作迁移源。`/settings/gamble-strategies` CRUD + `preview` + `migrate-from-no-gamble` 端点全部就绪 |
 | **v0.4** | **2026-05-08** | **多用户账号系统 + 字段隐藏 + ERP 钩子** — 5 张新表(agencies/users/invitations/erp_sync_events/erp_config)+ 4 角色(super_admin/agency_owner/agent/viewer)+ 邀请制(`bws-XXXXX` 邀请码)+ bcrypt 密码 + cookie 升级带 user_id + 5 次失败锁定 15min + 老 .env 账号自动 bootstrap 成 super_admin。**字段过滤**: agent/viewer 看不到 `cost_idr_*` / `profit_cny_per_pax` / `gamble_cny_per_pax`。**Quote scope 隔离**: agent 只看自己创建的 / agency_owner 看本社 / super_admin 全权。**ERP 事件队列**: `enqueue_erp_event()` 业务事务内写 `erp_sync_events`(配置 enabled=False 时不写),管理面板可看队列+手动 mark synced/skip/retry。15 个新 admin API 端点。Smoke test 9 场景全 PASS |
 | v0.5 待 | TBD | APScheduler ERP worker + Alembic 迁移 + 报价导出 PDF/Excel/Word + 前端 admin 面板 |
+| v0.9.0 | 2026-05-16 | CLI 体系工程化 (4 命令组 + bws dev 一键启动) + Alembic 接入 + pytest 双轨 44 用例 (CLI subprocess + Web TestClient) + datetime.utcnow() 全替换为 now_utc() |
+| **v0.9.1** | **2026-05-19** | **赌自费策略数据对齐 + legacy 清理 + 普通用户 UI 隔离**:DB gamble_strategies 补到 12 条 v0.5.2 业务对齐版 (8 老 soft-disabled);删 _check_no_gamble_rules 函数 + 兜底分支 + 3 CRUD 端点 + UI legacy 卡片 + ruleDialog 弹窗 + 6 methods;前端 main-tabs 加 isAdmin gate (agent/viewer 只看报价 + 历史);FastAPI on_event → lifespan 消 4 warning;seed._seed_gamble_strategies 改 idempotent + database.init_db 加同步钩子 |
 
 ---
 
@@ -274,13 +276,15 @@ gambling_engine.recommend()
    │
    ├─[1]─▶ _build_signals(quote)        # 提炼客户类型/自由小时/全程含餐/...
    │
-   ├─[2]─▶ _check_gamble_strategies()   # ★ v0.3 主路径
+   ├─[2]─▶ _check_gamble_strategies()   # ★ 主路径 (v0.9.1 起唯一规则路径)
    │         按 priority desc 遍历 active strategies
    │         首条 conditions 全 AND 命中 → 返回(skip/fixed/per_pax)
+   │         12 条 v0.5.2 业务对齐策略含 priority=100 (无自由→不赌) +
+   │         priority=1 (有自由→兜底 ¥200/人), 实际全覆盖
    │
-   ├─[3]─▶ _check_no_gamble_rules()     # legacy 兜底(旧表 NoGambleRule)
-   │
-   └─[4]─▶ 老经验值算法(自由时间因子+自费重叠+客户/季节系数)  # 最终兜底
+   └─[3]─▶ 老经验值算法(自由时间因子+自费重叠+客户/季节系数)  # 最终兜底 (仅用户禁用全部策略时触发)
+
+# v0.5.3 起 NoGambleRule 兜底分支已删除 (策略表完全覆盖, 不再需要)
 ```
 
 ### 关键文件
@@ -308,9 +312,11 @@ gambling_engine.recommend()
 
 ### 迁移
 
-- 老 `NoGambleRule` 表 5 条 seed → seed_all 自动 + `POST /settings/gamble-strategies/migrate-from-no-gamble` 一次性 INSERT
+- v0.5.3 起 seed._seed_no_gamble_rules 已删除 (新 DB 不再自动种 5 条老规则)
+- 老 DB 残留的 NoGambleRule 数据保留 + `POST /settings/gamble-strategies/migrate-from-no-gamble` 一次性迁移端点保留
 - 迁移幂等(按 name 去重),重跑只看 `migrated/skipped_duplicate` 数字
-- 老表保留不删(留作历史查询; v0.4 决定是否删)
+- 老 NoGambleRule 表 + 模型 + condition-types 端点保留 (condition-types 给 GambleStrategy 编辑器复用 12 种条件下拉)
+- v0.9.1 起 routers/settings.py 的 list/upsert/delete /no-gamble-rules CRUD 3 端点已删除 (UI 卡片 + 弹窗一并删)
 
 ### v0.3 验证清单(已通过)
 
