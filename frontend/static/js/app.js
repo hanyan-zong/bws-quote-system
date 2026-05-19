@@ -62,6 +62,13 @@ const App = {
       changePasswordForm: { old_password: '', new_password: '', new_password_confirm: '' },
     };
   },
+  computed: {
+    // v0.9.2: 普通用户 (agent / viewer) 看不到资源库/AI 采集/一日游模板/设置
+    isAdmin() {
+      const role = this.currentUser?.role;
+      return ['super_admin', 'ops_manager', 'agency_owner'].includes(role);
+    },
+  },
   methods: {
     async loadHealth() {
       try {

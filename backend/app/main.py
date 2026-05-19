@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -32,11 +33,24 @@ logging.basicConfig(
 logger = logging.getLogger("bws.main")
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """启动 / 关闭钩子 (替代废弃的 on_event)."""
+    init_db()
+    logger.info(
+        "BWS 预报价系统已启动 | DB=%s | AI=%s",
+        settings.database_url,
+        "real" if settings.ai_available else "MOCK",
+    )
+    yield
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="BWS 预报价系统 · B 端",
-        version="0.9.0",
+        version="0.9.1",
         description="面向同业旅行社的智能预报价系统 — 强制账号系统 + 多步注册向导 + 自助审核 + 5 角色权限 + 功能配额 + AI 一键上传行程报价 + 资源库 + 行程组合 + 合理性校验 + 赌自费(铁律+5维度) + 三件套导出 + 反馈回写",
+        lifespan=_lifespan,
     )
 
     app.add_middleware(
@@ -77,15 +91,6 @@ def create_app() -> FastAPI:
             return await call_next(request)
         return JSONResponse(status_code=401, content={"detail": "未登录"})
 
-    @app.on_event("startup")
-    def _startup() -> None:
-        init_db()
-        logger.info(
-            "BWS 预报价系统已启动 | DB=%s | AI=%s",
-            settings.database_url,
-            "real" if settings.ai_available else "MOCK",
-        )
-
     # ---- API ----
     api_prefix = settings.api_prefix
     app.include_router(auth_router.router, prefix=api_prefix)
@@ -103,8 +108,8 @@ def create_app() -> FastAPI:
     def health():
         return {
             "ok": True,
-            "version": "0.9.0",
-            "version_label": "v0.9.0 · CLI 体系工程化 + Alembic + 30 测试",
+            "version": "0.9.1",
+            "version_label": "v0.9.1 · 赌自费策略对齐 + lifespan + legacy 清理",
             "ai_available": settings.ai_available,
             "ai_model": settings.anthropic_model if settings.ai_available else "mock",
         }

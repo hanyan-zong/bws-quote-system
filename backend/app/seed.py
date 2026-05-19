@@ -306,74 +306,15 @@ def _seed_distances(db: Session) -> None:
             ))
 
 
-def _seed_no_gamble_rules(db: Session) -> None:
-    """默认不赌自费规则 — 用户后续可在 UI 增删改."""
-    if db.query(models.NoGambleRule).count() > 0:
-        return
-    rules = [
-        {
-            "name": "自由时间不足 4 小时不赌",
-            "description": "整团自由活动 < 4h, 客人没空买自费",
-            "conditions": [{"type": "free_hours_lt", "value": 4}],
-            "priority": 100,
-        },
-        {
-            "name": "MICE/婚礼短行程不赌",
-            "description": "MICE 与婚礼客人主活动占满, 自费空间小",
-            "conditions": [
-                {"type": "customer_type_in", "value": ["mice", "wedding"]},
-                {"type": "total_days_lt", "value": 5},
-            ],
-            "priority": 90,
-        },
-        {
-            "name": "全程含餐 + 已含 SPA 不赌",
-            "description": "餐 + SPA 都含, 自费转化已被覆盖",
-            "conditions": [
-                {"type": "all_meals_included", "value": True},
-                {"type": "spa_already_booked", "value": True},
-            ],
-            "priority": 80,
-        },
-        {
-            "name": "首次合作 + 小团不赌",
-            "description": "新客户 + 团 ≤ 2 人, 风险大于回报",
-            "conditions": [
-                {"type": "is_first_time_agency", "value": True},
-                {"type": "pax_total_lt", "value": 3},
-            ],
-            "priority": 70,
-        },
-        {
-            "name": "老年团淡季不赌",
-            "description": "老年客群 + 淡季双低系数",
-            "conditions": [
-                {"type": "customer_type_in", "value": ["senior"]},
-                {"type": "season_in", "value": ["low"]},
-            ],
-            "priority": 60,
-            "active": False,  # 默认关闭, 让管理员自行启用
-        },
-    ]
-    for r in rules:
-        db.add(models.NoGambleRule(
-            name=r["name"],
-            description=r["description"],
-            conditions=json.dumps(r["conditions"], ensure_ascii=False),
-            active=r.get("active", True),
-            priority=r["priority"],
-            created_by="seed",
-        ))
-
-
 def _seed_gamble_strategies(db: Session) -> None:
     """v0.5.2 业务规则升级版 — 基于用户实际经营经验:
 
     铁律: 主结构有自由活动 → 必须赌 (额度可以小)
     维度: 酒店级别 / 已含水上数 / 自由日含餐 / 儿童占比 / 老年(55+)占比
+
+    幂等: 按 name 补缺, 不覆盖已有 (用户改过 priority/金额会保留)
     """
-    if db.query(models.GambleStrategy).count() > 0:
-        return
+    existing_names = {n for (n,) in db.query(models.GambleStrategy.name).all()}
     strategies = [
         # ===== 1) 完全无自由活动 → 唯一可"不赌"的场景 =====
         {
@@ -481,7 +422,10 @@ def _seed_gamble_strategies(db: Session) -> None:
             "action": "fixed", "gamble_cny": 200, "extra_profit_cny": 0, "priority": 1,
         },
     ]
+    added = 0
     for s in strategies:
+        if s["name"] in existing_names:
+            continue
         db.add(models.GambleStrategy(
             name=s["name"],
             description=s["description"],
@@ -493,6 +437,9 @@ def _seed_gamble_strategies(db: Session) -> None:
             active=s.get("active", True),
             created_by="seed",
         ))
+        added += 1
+    if added:
+        print(f"  · gamble_strategies: 补 {added} 条")
 
 
 def _seed_templates(db: Session, dests: dict) -> None:
@@ -639,8 +586,8 @@ def seed_all() -> None:
         db.flush()
         _seed_distances(db)
         _seed_templates(db, dests)
-        _seed_no_gamble_rules(db)  # 旧表保留作迁移源
-        _seed_gamble_strategies(db)  # v0.3 主表
+        # v0.5.3: 不再 seed NoGambleRule (legacy); GambleStrategy 完全覆盖
+        _seed_gamble_strategies(db)  # v0.3 主表 (idempotent: 按 name 补缺)
         _seed_area_rules(db)
         _seed_attraction_conflicts(db)
     print("✅ 样本数据已写入")

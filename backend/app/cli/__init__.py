@@ -29,7 +29,7 @@ def _ensure_utf8_stdio() -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="bws",
-        description="BWS 预报价系统命令行 (v0.9.0)",
+        description="BWS 预报价系统命令行 (v0.9.1)",
     )
     parser.add_argument("--version", action="version", version="bws 0.1.0")
     subparsers = parser.add_subparsers(dest="group", metavar="<group>", required=True)

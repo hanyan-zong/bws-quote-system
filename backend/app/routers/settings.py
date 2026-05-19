@@ -19,7 +19,6 @@ from ..schemas import (
     GambleConfigIn,
     GambleStrategyIn,
     GambleStrategyPreviewIn,
-    NoGambleRuleIn,
     TimeBudgetIn,
 )
 from .auth import get_current_user
@@ -113,58 +112,9 @@ def set_gamble_config(payload: GambleConfigIn, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
-# ---------------- 不赌自费规则 ----------------
-def _rule_to_dict(rec: models.NoGambleRule) -> dict:
-    try:
-        conds = json.loads(rec.conditions) if rec.conditions else []
-    except Exception:
-        conds = []
-    return {
-        "id": rec.id,
-        "name": rec.name,
-        "description": rec.description,
-        "conditions": conds,
-        "active": rec.active,
-        "priority": rec.priority,
-        "created_at": rec.created_at.isoformat() if rec.created_at else None,
-    }
-
-
-@router.get("/no-gamble-rules")
-def list_no_gamble_rules(db: Session = Depends(get_db)):
-    rows = db.query(models.NoGambleRule).order_by(
-        models.NoGambleRule.priority.desc(), models.NoGambleRule.id
-    ).all()
-    return [_rule_to_dict(r) for r in rows]
-
-
-@router.post("/no-gamble-rules")
-def upsert_no_gamble_rule(payload: NoGambleRuleIn, db: Session = Depends(get_db)):
-    if payload.id:
-        r = db.get(models.NoGambleRule, payload.id)
-        if not r:
-            raise HTTPException(404)
-    else:
-        r = models.NoGambleRule()
-        db.add(r)
-    r.name = payload.name
-    r.description = payload.description
-    r.conditions = json.dumps(payload.conditions, ensure_ascii=False)
-    r.active = payload.active
-    r.priority = payload.priority
-    db.commit()
-    db.refresh(r)
-    return {"id": r.id}
-
-
-@router.delete("/no-gamble-rules/{rid}")
-def delete_no_gamble_rule(rid: int, db: Session = Depends(get_db)):
-    r = db.get(models.NoGambleRule, rid)
-    if not r:
-        raise HTTPException(404)
-    db.delete(r)
-    db.commit()
-    return {"ok": True}
+# ---------------- 不赌自费规则 CRUD ----------------
+# v0.5.3: 已删除. 表 + 模型保留, 仅作 /gamble-strategies/migrate-from-no-gamble 的数据源.
+# condition-types 端点保留 (前端编辑 GambleStrategy 条件下拉用) — 在文件末尾.
 
 
 # ---------------- 巴厘岛区域字典 ----------------

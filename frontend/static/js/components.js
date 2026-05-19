@@ -2539,10 +2539,8 @@ const SettingsPanel = {
     return {
       rate: { rate_cny_to_idr: 2300, set_by: '' },
       tb: {}, gc: {},
-      rules: [],
+      // v0.5.3: rules/ruleForm/ruleDialog 已退役 (NoGambleRule legacy 卡片删除)
       conditionTypes: [],
-      ruleDialog: false,
-      ruleForm: { name: '', description: '', conditions: [], active: true, priority: 50 },
       // 区域规则
       areaRules: [],
       areasGrouped: {},
@@ -2610,7 +2608,7 @@ const SettingsPanel = {
       this.rate = (await http.get('/settings/exchange-rate')).data;
       this.tb = (await http.get('/settings/time-budget')).data;
       this.gc = (await http.get('/settings/gamble-config')).data;
-      this.rules = (await http.get('/settings/no-gamble-rules')).data;
+      // v0.5.3: NoGambleRule CRUD 已退役; condition-types 端点保留供 GambleStrategy 编辑器使用
       this.conditionTypes = (await http.get('/settings/no-gamble-rules/condition-types')).data;
       this.areaRules = (await http.get('/settings/area-rules')).data;
       this.areasGrouped = (await http.get('/settings/areas')).data.grouped || {};
@@ -2907,45 +2905,8 @@ const SettingsPanel = {
     async toggleAreaRule(rule) {
       await http.post('/settings/area-rules', { ...rule });
     },
-    openRuleDialog(rule) {
-      if (rule) {
-        this.ruleForm = JSON.parse(JSON.stringify(rule));
-      } else {
-        this.ruleForm = { name: '', description: '', conditions: [{ type: 'free_hours_lt', value: 4 }], active: true, priority: 50 };
-      }
-      this.ruleDialog = true;
-    },
-    addCondition() {
-      this.ruleForm.conditions.push({ type: 'free_hours_lt', value: 4 });
-    },
-    removeCondition(idx) {
-      this.ruleForm.conditions.splice(idx, 1);
-    },
-    async saveRule() {
-      if (!this.ruleForm.name) { ElementPlus.ElMessage.warning('规则名不能为空'); return; }
-      // 字符串值兼容: 数值条件转 number, 列表条件转数组
-      this.ruleForm.conditions.forEach(c => {
-        if (['free_hours_lt','free_hours_gt','total_days_lt','total_days_gt','pax_total_lt','pax_total_gt'].includes(c.type)) {
-          c.value = Number(c.value);
-        } else if (['customer_type_in','season_in'].includes(c.type)) {
-          if (typeof c.value === 'string') c.value = c.value.split(',').map(s=>s.trim()).filter(Boolean);
-        } else if (['is_first_time_agency','all_meals_included','spa_already_booked','water_already_booked'].includes(c.type)) {
-          c.value = !!c.value;
-        }
-      });
-      await http.post('/settings/no-gamble-rules', this.ruleForm);
-      this.ruleDialog = false;
-      ElementPlus.ElMessage.success('规则已保存');
-      this.loadAll();
-    },
-    async deleteRule(id) {
-      await http.delete(`/settings/no-gamble-rules/${id}`);
-      ElementPlus.ElMessage.success('已删除');
-      this.loadAll();
-    },
-    async toggleRule(rule) {
-      await http.post('/settings/no-gamble-rules', { ...rule });
-    },
+    // v0.5.3: openRuleDialog/addCondition/removeCondition/saveRule/deleteRule/toggleRule 已删除
+    // (NoGambleRule legacy UI 卡片 + 弹窗一并删除, GambleStrategy 编辑器自带条件操作)
     async saveRate() {
       await http.put('/settings/exchange-rate', this.rate);
       ElementPlus.ElMessage.success('汇率已保存');
@@ -2990,7 +2951,7 @@ const SettingsPanel = {
     },
     async saveStrategy() {
       if (!this.strategyForm.name) { ElementPlus.ElMessage.warning('策略名不能为空'); return; }
-      // 类型转换 (跟 saveRule 一致)
+      // 类型转换: 数字 / 列表 / 布尔 三种 condition 值规范化
       this.strategyForm.conditions.forEach(c => {
         if (['free_hours_lt','free_hours_gt','total_days_lt','total_days_gt','pax_total_lt','pax_total_gt'].includes(c.type)) {
           c.value = Number(c.value);
@@ -3339,39 +3300,7 @@ const SettingsPanel = {
         </template>
       </el-dialog>
 
-      <!-- 不赌自费规则管理 -->
-      <div class="bws-card">
-        <h3>🛑 不赌自费规则 <span style="font-weight:400;font-size:12px;color:#9ca3af;margin-left:8px">(legacy, v0.3 已被"赌自费策略"替代; 仅作迁移源保留)</span>
-          <el-button size="small" type="primary" plain @click="openRuleDialog(null)" style="margin-left:auto">新增规则</el-button>
-        </h3>
-        <p style="color:#6b7280;margin:0 0 12px;font-size:13px">
-          所有 conditions 全部命中 → 系统判定不赌. 多条规则取 OR (任一命中即触发).
-          规则按 priority 倒序评估; 命中即终止.
-        </p>
-        <el-table :data="rules" border stripe size="small">
-          <el-table-column prop="name" label="规则名" width="220" />
-          <el-table-column prop="description" label="说明" />
-          <el-table-column label="条件" width="280">
-            <template #default="s">
-              <el-tag v-for="(c,i) in s.row.conditions" :key="i" size="small" style="margin:2px">
-                {{ c.type }}: {{ Array.isArray(c.value) ? c.value.join(',') : c.value }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="priority" label="优先级" width="80" />
-          <el-table-column label="启用" width="80">
-            <template #default="s">
-              <el-switch v-model="s.row.active" @change="toggleRule(s.row)" />
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="140">
-            <template #default="s">
-              <el-button size="small" link @click="openRuleDialog(s.row)">编辑</el-button>
-              <el-button size="small" type="danger" link @click="deleteRule(s.row.id)">删除</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
+      <!-- v0.5.3: 不赌自费规则 (legacy NoGambleRule) 卡片已删除, 由"💰 赌自费策略"完全替代 -->
 
       <!-- 区域不兼容规则 -->
       <div class="bws-card">
@@ -3510,29 +3439,7 @@ const SettingsPanel = {
         </template>
       </el-dialog>
 
-      <!-- 编辑/新增规则弹窗 -->
-      <el-dialog v-model="ruleDialog" title="编辑不赌自费规则" width="700px">
-        <el-form label-width="100px">
-          <el-form-item label="规则名"><el-input v-model="ruleForm.name" placeholder="如: MICE 短行程不赌" /></el-form-item>
-          <el-form-item label="说明"><el-input v-model="ruleForm.description" type="textarea" :rows="2" /></el-form-item>
-          <el-form-item label="优先级"><el-input-number v-model="ruleForm.priority" :min="0" :max="999" /></el-form-item>
-          <el-form-item label="启用"><el-switch v-model="ruleForm.active" /></el-form-item>
-          <el-form-item label="条件 (全部命中)">
-            <div v-for="(c, i) in ruleForm.conditions" :key="i" style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
-              <el-select v-model="c.type" style="width:200px">
-                <el-option v-for="ct in conditionTypes" :key="ct.type" :label="ct.label" :value="ct.type" />
-              </el-select>
-              <el-input v-model="c.value" placeholder="值; 列表用逗号分隔" style="flex:1" />
-              <el-button size="small" type="danger" link @click="removeCondition(i)">删除</el-button>
-            </div>
-            <el-button size="small" plain @click="addCondition">+ 添加条件</el-button>
-          </el-form-item>
-        </el-form>
-        <template #footer>
-          <el-button @click="ruleDialog = false">取消</el-button>
-          <el-button type="primary" @click="saveRule">保存</el-button>
-        </template>
-      </el-dialog>
+      <!-- v0.5.3: ruleDialog (编辑不赌自费规则弹窗) 已删除, GambleStrategy 编辑器已内含完整条件编辑能力 -->
 
       <!-- ====== v0.7 账号与权限管理 ====== -->
       <div class="bws-card" v-if="acctAccessible" style="border:2px solid #5b21b6">

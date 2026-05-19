@@ -17,7 +17,7 @@
           <div class="logo">BWS</div>
           <div class="brand-text">
             <h1>预报价系统 · B 端</h1>
-            <div class="sub">v0.9.0 · 同业旅行社智能报价系统</div>
+            <div class="sub">v0.9.1 · 同业旅行社智能报价系统</div>
           </div>
         </div>
         <div class="header-actions">
@@ -430,20 +430,20 @@
             @saved="onQuoteSaved"></quote-builder>
         </el-tab-pane>
 
-        <!-- ============= Tab 2 · 资源库 ============= -->
-        <el-tab-pane label="🗂 资源库" name="resources">
+        <!-- ============= Tab 2 · 资源库 (仅管理类角色) ============= -->
+        <el-tab-pane v-if="isAdmin" label="🗂 资源库" name="resources">
           <resource-manager
             :destinations="destinations"
             @refresh="loadAllResources"></resource-manager>
         </el-tab-pane>
 
-        <!-- ============= Tab 3 · AI 文档采集 ============= -->
-        <el-tab-pane label="🤖 AI 文档采集" name="ai">
+        <!-- ============= Tab 3 · AI 文档采集 (仅管理类角色) ============= -->
+        <el-tab-pane v-if="isAdmin" label="🤖 AI 文档采集" name="ai">
           <ai-uploader @confirmed="loadAllResources"></ai-uploader>
         </el-tab-pane>
 
-        <!-- ============= Tab 4 · 一日游模板 ============= -->
-        <el-tab-pane label="🗺 一日游模板" name="templates">
+        <!-- ============= Tab 4 · 一日游模板 (仅管理类角色) ============= -->
+        <el-tab-pane v-if="isAdmin" label="🗺 一日游模板" name="templates">
           <template-manager
             :destinations="destinations"
             :attractions="attractions"
@@ -451,8 +451,8 @@
             @refresh="loadTemplates"></template-manager>
         </el-tab-pane>
 
-        <!-- ============= Tab 5 · 设置 ============= -->
-        <el-tab-pane label="⚙️ 设置" name="settings">
+        <!-- ============= Tab 5 · 设置 (仅管理类角色) ============= -->
+        <el-tab-pane v-if="isAdmin" label="⚙️ 设置" name="settings">
           <settings-panel @rate-changed="loadRate"></settings-panel>
         </el-tab-pane>
 
@@ -463,7 +463,7 @@
       </el-tabs>
 
       <footer class="app-footer">
-        <span>© BWS Travel · 预报价系统 v0.9.0 · {{ today }}</span>
+        <span>© BWS Travel · 预报价系统 v0.9.1 · {{ today }}</span>
       </footer>
     </div>
   </el-config-provider>
@@ -474,7 +474,7 @@
 <script src="/static/vendor/element-plus-zh-cn.min.js"></script>
 <script src="/static/vendor/element-plus-icons.iife.min.js"></script>
 <script src="/static/vendor/axios.min.js"></script>
-<script src="/static/js/components.js?v=14"></script>
-<script src="/static/js/app.js?v=14"></script>
+<script src="/static/js/components.js?v=15"></script>
+<script src="/static/js/app.js?v=15"></script>
 </body>
 </html>

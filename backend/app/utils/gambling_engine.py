@@ -1,10 +1,8 @@
-"""赌自费推荐引擎 — v0.2 增强版.
+"""赌自费推荐引擎 — v0.5.3.
 
-核心改进:
-1. 用户可在系统中维护"不赌自费规则" (NoGambleRule), 引擎按规则自动判断是否赌
-2. 自由时间用 hours 累计 (支持半天=4h / 全天=8h), 取代旧的整天计数
-3. 自费项目按 category 与行程内容做重叠检测, 已包含的不再加入预测
-4. AI 信心评分集成行程结构与历史命中率
+主路径: GambleStrategy 单表 (12 条 v0.5.2 业务规则) — priority 倒序, 命中即停.
+全不匹配 → 走兜底默认算法 (free_time_factor × 客户系数 × 季节系数 + 风险护栏).
+NoGambleRule 兜底分支 v0.5.3 已移除 (策略表完全覆盖).
 """
 from __future__ import annotations
 
@@ -329,22 +327,6 @@ def _eval_condition(cond: dict, sig: ItinerarySignals) -> bool:
     return False
 
 
-def _check_no_gamble_rules(db: Session, sig: ItinerarySignals) -> models.NoGambleRule | None:
-    rules = (
-        db.query(models.NoGambleRule)
-        .filter_by(active=True)
-        .order_by(models.NoGambleRule.priority.desc(), models.NoGambleRule.id)
-        .all()
-    )
-    for rule in rules:
-        conds = _safe_json(rule.conditions)
-        if not conds:
-            continue
-        if all(_eval_condition(c, sig) for c in conds):
-            return rule
-    return None
-
-
 # ============================================================
 #  自费项目过滤 — 基于 category + 重叠 ID
 # ============================================================
@@ -530,21 +512,9 @@ def recommend(quote: models.Quote, db: Session) -> GambleResult:
             },
         )
 
-    # ---- 0b. 无策略命中 → 兜底走旧 NoGambleRule (v0.2 兼容期) ----
-    triggered = _check_no_gamble_rules(db, sig)
-    if triggered:
-        return GambleResult(
-            recommended_cny=Decimal(0), low_bound_cny=Decimal(0), high_bound_cny=Decimal(0),
-            ai_confidence=0.95,
-            reasoning=f"触发不赌规则: {triggered.name} — {triggered.description or ''}",
-            configured_optional_tours=[], excluded_optional_tours=[],
-            enabled=False,
-            skip_rule={
-                "id": triggered.id, "name": triggered.name,
-                "description": triggered.description,
-                "conditions": _safe_json(triggered.conditions),
-            },
-        )
+    # v0.5.3: NoGambleRule 兜底分支已移除. v0.5.2 的 12 条 GambleStrategy 含
+    # priority=100 (has_any_free_activity=False → 不赌) + priority=1 (有自由 → ¥200/人)
+    # 完全覆盖, 无策略命中只可能是用户全部禁用 → 走下面默认算法.
 
     # ---- 1. 自由时间因子 (基于 hours 而非 days) ----
     total_hours = sig.total_days * 8.0  # 每天 8 小时活动时间

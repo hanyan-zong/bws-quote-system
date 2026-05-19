@@ -58,6 +58,22 @@ def init_db() -> None:
     from . import models  # noqa: F401  确保模型都注册
     Base.metadata.create_all(bind=engine)
     _ensure_bootstrap_admin()
+    _ensure_gamble_strategies_synced()
+
+
+def _ensure_gamble_strategies_synced() -> None:
+    """启动同步: seed.py 里有新策略条目时, 把缺的补上 (按 name 幂等)."""
+    from .seed import _seed_gamble_strategies
+    db = SessionLocal()
+    try:
+        _seed_gamble_strategies(db)
+        db.commit()
+    except Exception:
+        db.rollback()
+        import logging
+        logging.getLogger("bws.bootstrap").exception("策略同步失败 (非致命)")
+    finally:
+        db.close()
 
 
 def _ensure_bootstrap_admin() -> None:
