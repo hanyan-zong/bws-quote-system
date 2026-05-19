@@ -46,7 +46,11 @@ def test_db_migrate_runs_alembic_upgrade(bws, tmp_db_url):
         rows = conn.execute("SELECT version_num FROM alembic_version").fetchall()
     finally:
         conn.close()
-    assert rows == [("0000_baseline",)], f"unexpected alembic_version rows: {rows}"
+    # alembic_version 只该有一行 (当前 head); 不写死 revision id (会随新 migration 演进)
+    assert len(rows) == 1, f"expected 1 row, got: {rows}"
+    assert rows[0][0].startswith(("0000_", "0001_", "0002_", "0003_", "0004_", "0005_")), (
+        f"unexpected revision id format: {rows}"
+    )
 
 
 def test_db_migrate_idempotent(bws):

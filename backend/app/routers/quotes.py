@@ -56,18 +56,24 @@ def _persist_days(quote: models.Quote, payload: QuoteIn, db: Session) -> None:
     for d_in in payload.days:
         # 根据 free_hours 自动推 is_free (>=8 视为全天自由)
         derived_is_free = d_in.is_free or (d_in.free_hours or 0) >= 8
+        # v0.9.3: departure 类型自动 hotel_id=None + breakfast_included=True (前一晚含早)
+        _day_type = getattr(d_in, "day_type", "full") or "full"
+        _hotel_id = None if _day_type == "departure" else d_in.hotel_id
+        _hotel_room_id = None if _day_type == "departure" else d_in.hotel_room_id
+        _breakfast = True if _day_type == "departure" else d_in.breakfast_included
         day = models.QuoteDay(
             quote_id=quote.id,
             day_index=d_in.day_index,
             date=d_in.date,
             is_free=derived_is_free,
             free_hours=d_in.free_hours or (8 if d_in.is_free else 0),
+            day_type=_day_type,
             template_id=d_in.template_id,
-            hotel_id=d_in.hotel_id,
-            hotel_room_id=d_in.hotel_room_id,
+            hotel_id=_hotel_id,
+            hotel_room_id=_hotel_room_id,
             vehicle_id=d_in.vehicle_id,
             guide_id=d_in.guide_id,
-            breakfast_included=d_in.breakfast_included,
+            breakfast_included=_breakfast,
             lunch_restaurant_id=d_in.lunch_restaurant_id,
             dinner_restaurant_id=d_in.dinner_restaurant_id,
             afternoon_tea_id=d_in.afternoon_tea_id,
@@ -127,6 +133,7 @@ def _quote_to_dict(q: models.Quote) -> dict[str, Any]:
                 "day_index": d.day_index,
                 "date": d.date.isoformat() if d.date else None,
                 "is_free": d.is_free,
+                "day_type": getattr(d, "day_type", "full") or "full",
                 "template_id": d.template_id,
                 "hotel_id": d.hotel_id,
                 "hotel_room_id": d.hotel_room_id,

@@ -232,6 +232,8 @@ class QuoteDayIn(BaseModel):
     date: Optional[_date] = None
     is_free: bool = False
     free_hours: int = 0  # 0=全程行程, 4=半天自由, 8=全天自由
+    # v0.9.3: 行程时长类型
+    day_type: Literal["full", "half", "arrival", "departure"] = "full"
     template_id: Optional[int] = None
     hotel_id: Optional[int] = None
     hotel_room_id: Optional[int] = None

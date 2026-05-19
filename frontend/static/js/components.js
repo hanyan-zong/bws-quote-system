@@ -86,6 +86,7 @@ const QuoteBuilder = {
         date: null,
         is_free: false,
         free_hours: 0,           // 0 全程, 4 半天自由, 8 全天自由
+        day_type: 'full',        // v0.9.3: full/half/arrival/departure
         template_id: null,
         hotel_id: null, hotel_room_id: null,
         vehicle_id: null, guide_id: null,
@@ -97,6 +98,29 @@ const QuoteBuilder = {
         notes: '',
         attractions: []
       };
+    },
+    // v0.9.3: day_type 改变时自动联动 (送机日去酒店 + 早餐 ON)
+    onDayTypeChange(day) {
+      if (day.day_type === 'departure') {
+        day.hotel_id = null;
+        day.hotel_room_id = null;
+        day.breakfast_included = true;
+      }
+    },
+    // v0.9.3: 复制某日全部字段, 在它后面插入一天
+    copyDayAfter(idx) {
+      const src = this.form.days[idx];
+      const copy = JSON.parse(JSON.stringify(src));
+      copy.day_index = idx + 2;
+      copy.date = null;  // 日期不复制 (顺延一天意义模糊, 让用户自填)
+      copy.attractions = (src.attractions || []).map((a, i) => ({
+        attraction_id: a.attraction_id,
+        order_index: i + 1,
+        stay_minutes: a.stay_minutes,
+      }));
+      this.form.days.splice(idx + 1, 0, copy);
+      this.form.days.forEach((d, i) => { d.day_index = i + 1; });
+      ElementPlus.ElMessage.success(`已复制第 ${idx + 1} 天到第 ${idx + 2} 天`);
     },
     onFreeHoursChange(day) {
       day.is_free = day.free_hours >= 8;
@@ -307,29 +331,29 @@ const QuoteBuilder = {
           </el-col>
           <el-col :xs="12" :sm="6" :md="3">
             <el-form-item label="成人">
-              <el-input-number v-model="form.pax_adult" :min="1" :max="50" />
+              <el-input-number v-model="form.pax_adult" :min="1" :max="50" style="width:100%" />
             </el-form-item>
           </el-col>
           <el-col :xs="12" :sm="6" :md="3">
             <el-form-item label="儿童">
-              <el-input-number v-model="form.pax_child" :min="0" :max="20" />
+              <el-input-number v-model="form.pax_child" :min="0" :max="20" style="width:100%" />
             </el-form-item>
           </el-col>
           <el-col :xs="12" :sm="6" :md="3">
-            <el-form-item label="老年(55+)">
-              <el-input-number v-model="form.pax_senior" :min="0" :max="50" />
+            <el-form-item label="长者">
+              <el-input-number v-model="form.pax_senior" :min="0" :max="50" style="width:100%" />
             </el-form-item>
           </el-col>
           <el-col :xs="24" :sm="12" :md="3">
             <el-form-item label="目的地">
-              <el-select v-model="form.destination_codes[0]">
+              <el-select v-model="form.destination_codes[0]" style="width:100%">
                 <el-option v-for="d in destinations" :key="d.code" :label="d.name_zh" :value="d.code" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :xs="24" :sm="12" :md="3">
             <el-form-item label="季节">
-              <el-select v-model="form.season">
+              <el-select v-model="form.season" style="width:100%">
                 <el-option label="淡季" value="low" />
                 <el-option label="平季" value="shoulder" />
                 <el-option label="旺季" value="high" />
@@ -418,20 +442,36 @@ const QuoteBuilder = {
             <div>
               <strong>Day {{ day.day_index }}</strong>
               <span style="margin-left:12px;font-size:12px;opacity:0.85">
-                {{ day.free_hours >= 8 ? '🌴 全天自由' : (day.free_hours === 4 ? '🌗 半天自由' : '行程安排') }}
+                {{ ({full:'🚌 全天',half:'🌗 半天',arrival:'🛬 抵达日',departure:'🛫 送机日'})[day.day_type || 'full'] }}
+                <span v-if="(day.day_type || 'full') !== 'full'" style="margin-left:4px">· 车导 0.5 倍计费</span>
               </span>
+              <span v-if="day.free_hours >= 8" style="margin-left:8px;font-size:12px;opacity:0.85">🌴 全天自由</span>
+              <span v-else-if="day.free_hours === 4" style="margin-left:8px;font-size:12px;opacity:0.85">🌗 半天自由</span>
               <span v-if="dayAvailableTip(day.day_index)" style="margin-left:12px;font-size:12px;opacity:0.95;background:rgba(255,255,255,0.18);padding:2px 8px;border-radius:4px">
                 ✈️ {{ dayAvailableTip(day.day_index).role }} 实际可用 ~{{ dayAvailableTip(day.day_index).hours }}h
                 {{ dayAvailableTip(day.day_index).warn }}
               </span>
             </div>
-            <div style="display:flex;align-items:center;gap:8px;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+              <!-- v0.9.3: 行程时长 (4 选 1, 影响车导计费 + 离开日去酒店) -->
+              <el-radio-group v-model="day.day_type" size="small"
+                              @change="onDayTypeChange(day)" fill="#0ea5e9">
+                <el-radio-button value="full" title="全天用车">全天</el-radio-button>
+                <el-radio-button value="half" title="半天用车, 0.5 倍计费">半天</el-radio-button>
+                <el-radio-button value="arrival" title="抵达日, 下午到, 车导按 0.5 天">抵达日</el-radio-button>
+                <el-radio-button value="departure" title="送机日, 上午送机, 无住宿, 含早, 车导按 0.5 天">送机日</el-radio-button>
+              </el-radio-group>
               <el-radio-group v-model="day.free_hours" size="small"
                               @change="onFreeHoursChange(day)" fill="#f59e0b">
                 <el-radio-button :value="0">全程行程</el-radio-button>
                 <el-radio-button :value="4">半天自由</el-radio-button>
                 <el-radio-button :value="8">全天自由</el-radio-button>
               </el-radio-group>
+              <button type="button"
+                      class="btn-day-copy"
+                      @click="copyDayAfter(idx)"
+                      title="复制此天到下一天 (全字段克隆)"
+                      style="background:#10b981;color:white;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px">📋 复制</button>
               <button type="button"
                       v-if="form.days.length > 1"
                       class="btn-day-remove"
@@ -440,7 +480,12 @@ const QuoteBuilder = {
             </div>
           </div>
           <div class="day-body">
-            <el-row :gutter="12">
+            <!-- v0.9.3: 送机日不入住, 隐藏酒店/房型. 早餐默认 ON (前一晚含早) -->
+            <div v-if="day.day_type === 'departure'"
+                 style="padding:10px;background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;margin-bottom:12px;font-size:13px;color:#78350f">
+              🛫 <strong>送机日</strong> — 不入住酒店,早餐由前一晚酒店提供;车导按半天计费
+            </div>
+            <el-row v-if="day.day_type !== 'departure'" :gutter="12">
               <el-col :xs="24" :md="6">
                 <el-form-item label="酒店">
                   <el-select v-model="day.hotel_id" filterable clearable placeholder="选酒店">
@@ -494,30 +539,66 @@ const QuoteBuilder = {
                 </el-col>
               </el-row>
 
-              <el-form-item label="景点 (按顺序添加)">
-                <div style="display:flex;gap:8px;margin-bottom:8px;">
-                  <el-select placeholder="添加景点(可搜索/选了会自动建议套模板)" filterable
+              <el-form-item label="今日景点路线">
+                <div style="display:flex;gap:8px;margin-bottom:10px;width:100%">
+                  <el-select placeholder="+ 添加景点 (输入名字搜索)" filterable
                              :model-value="null"
                              @change="(v) => addAttraction(day, v)" style="flex:1">
                     <el-option v-for="a in filteredAttractions" :key="a.id"
                                :label="\`\${a.name_zh} (\${a.area || '未分区'})\`" :value="a.id" />
                   </el-select>
                 </div>
-                <div v-for="(item, i) in day.attractions" :key="i" style="margin-bottom:8px">
-                  <div style="display:flex;gap:6px;align-items:center">
-                    <el-tag size="small">#{{ item.order_index }}</el-tag>
-                    <span style="flex:1">{{ filteredAttractions.find(a => a.id === item.attraction_id)?.name_zh || '?' }}
-                      <span v-if="filteredAttractions.find(a => a.id === item.attraction_id)?.area" style="color:#9ca3af;font-size:12px">
-                        ({{ filteredAttractions.find(a => a.id === item.attraction_id)?.area }})
-                      </span>
-                    </span>
-                    <el-button size="small" @click="moveAttraction(day, i, -1)" :disabled="i === 0" title="上移">↑</el-button>
-                    <el-button size="small" @click="moveAttraction(day, i, 1)" :disabled="i === day.attractions.length - 1" title="下移">↓</el-button>
-                    <el-button size="small" type="danger" link @click="removeAttraction(day, i)">删除</el-button>
-                  </div>
-                  <div v-for="(t, ti) in attractionConflictTips(day, item)" :key="ti"
-                       :style="{ color: t.severity==='error'?'#dc2626':'#d97706', fontSize:'12px', marginLeft:'40px', marginTop:'2px' }">
-                    {{ t.severity==='error'?'❌ ':'⚠️ ' }}与「{{ t.otherName }}」冲突:{{ t.msg }}
+
+                <div v-if="!day.attractions || day.attractions.length === 0"
+                     style="color:#9ca3af;font-size:13px;padding:14px;background:#f9fafb;border:1px dashed #e5e7eb;border-radius:6px;text-align:center">
+                  还没添加景点 — 从上面下拉里选,景点会按选择顺序排成今日路线
+                </div>
+
+                <div v-else style="width:100%">
+                  <div v-for="(item, i) in day.attractions" :key="i"
+                       style="display:flex;align-items:stretch;gap:10px;margin-bottom:6px">
+
+                    <!-- 序号徽章 + 垂直连接线 -->
+                    <div style="display:flex;flex-direction:column;align-items:center;min-width:32px;padding-top:8px">
+                      <div :style="{
+                          width:'28px',height:'28px',borderRadius:'50%',
+                          background: i===0 ? '#10b981' : (i===day.attractions.length-1 ? '#ef4444' : '#3b82f6'),
+                          color:'white',display:'flex',alignItems:'center',justifyContent:'center',
+                          fontWeight:'700',fontSize:'13px',flexShrink:'0',
+                          boxShadow:'0 1px 2px rgba(0,0,0,0.15)'
+                        }">{{ item.order_index }}</div>
+                      <div v-if="i < day.attractions.length - 1"
+                           style="width:2px;flex:1;background:#cbd5e1;margin-top:4px;min-height:16px"></div>
+                    </div>
+
+                    <!-- 景点信息卡 -->
+                    <div style="flex:1;background:#fafbfc;border:1px solid #e5e7eb;border-radius:6px;padding:8px 12px;display:flex;align-items:center;gap:8px">
+                      <div style="flex:1;min-width:0">
+                        <div style="font-weight:600;font-size:14px;color:#1f2937">
+                          <span v-if="i===0" style="color:#10b981;font-size:11px;margin-right:6px">▶ 出发</span>
+                          <span v-else-if="i===day.attractions.length-1" style="color:#ef4444;font-size:11px;margin-right:6px">■ 终点</span>
+                          {{ filteredAttractions.find(a => a.id === item.attraction_id)?.name_zh || '?' }}
+                          <span v-if="filteredAttractions.find(a => a.id === item.attraction_id)?.area"
+                                style="color:#6b7280;font-size:12px;font-weight:400;margin-left:6px">
+                            📍 {{ filteredAttractions.find(a => a.id === item.attraction_id)?.area }}
+                          </span>
+                        </div>
+                        <div v-for="(t, ti) in attractionConflictTips(day, item)" :key="ti"
+                             :style="{ color: t.severity==='error'?'#dc2626':'#d97706', fontSize:'12px', marginTop:'4px' }">
+                          {{ t.severity==='error'?'❌':'⚠️' }} 与「{{ t.otherName }}」冲突:{{ t.msg }}
+                        </div>
+                      </div>
+
+                      <!-- 操作按钮:↑ ↓ × -->
+                      <div style="display:flex;gap:4px;flex-shrink:0">
+                        <el-button size="small" plain @click="moveAttraction(day, i, -1)"
+                                   :disabled="i === 0" title="上移">↑</el-button>
+                        <el-button size="small" plain @click="moveAttraction(day, i, 1)"
+                                   :disabled="i === day.attractions.length - 1" title="下移">↓</el-button>
+                        <el-button size="small" type="danger" plain
+                                   @click="removeAttraction(day, i)" title="删除此景点">×</el-button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </el-form-item>
@@ -1877,7 +1958,7 @@ const AiUploader = {
             <el-form-item label="儿童">
               <el-input-number v-model="itinFillerForm.pax_child" :min="0" :max="20" />
             </el-form-item>
-            <el-form-item label="老年(55+)">
+            <el-form-item label="长者">
               <el-input-number v-model="itinFillerForm.pax_senior" :min="0" :max="50" />
             </el-form-item>
             <el-form-item label="客户类型">

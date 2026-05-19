@@ -38,29 +38,42 @@ def calculate(quote: models.Quote, db: Session) -> PricingBreakdown:
         day_cost_idr = Decimal(0)
         details: list[str] = []
 
+        # v0.9.3: 半天系数 — half/arrival(下午到)/departure(上午送机) 三种用车按 0.5 天算
+        day_type = getattr(day, "day_type", "full") or "full"
+        is_half_charged = day_type in ("half", "arrival", "departure")
+        charge_ratio = Decimal("0.5") if is_half_charged else Decimal("1")
+        day_type_label = {
+            "half": "半天",
+            "arrival": "抵达日",
+            "departure": "送机日",
+        }.get(day_type, "")
+
         # ---- 酒店 ----
-        if day.hotel_room_id:
+        # v0.9.3: departure (送机日) 不算住宿 — 前一晚已含
+        if day.hotel_room_id and day_type != "departure":
             room = db.get(models.HotelRoom, day.hotel_room_id)
             if room:
                 cost = D(room.cost_idr_high if season == "high" else room.cost_idr_low)
                 day_cost_idr += cost
                 details.append(f"酒店 {room.room_type}: {cost} IDR")
 
-        # ---- 用车 ----
+        # ---- 用车 (v0.9.3: 半天/送机日 × 0.5) ----
         if day.vehicle_id and not day.is_free:
             v = db.get(models.Vehicle, day.vehicle_id)
             if v:
-                cost = D(v.cost_idr_per_day)
+                cost = (D(v.cost_idr_per_day) * charge_ratio).quantize(Decimal("1"))
                 day_cost_idr += cost
-                details.append(f"用车 {v.vehicle_type}: {cost} IDR")
+                suffix = f" ({day_type_label})" if day_type_label else ""
+                details.append(f"用车 {v.vehicle_type}{suffix}: {cost} IDR")
 
-        # ---- 导游 ----
+        # ---- 导游 (v0.9.3: 半天/送机日 × 0.5) ----
         if day.guide_id and not day.is_free:
             g = db.get(models.Guide, day.guide_id)
             if g:
-                cost = D(g.cost_idr_per_day)
+                cost = (D(g.cost_idr_per_day) * charge_ratio).quantize(Decimal("1"))
                 day_cost_idr += cost
-                details.append(f"导游 {g.name_zh}: {cost} IDR")
+                suffix = f" ({day_type_label})" if day_type_label else ""
+                details.append(f"导游 {g.name_zh}{suffix}: {cost} IDR")
 
         if not day.is_free:
             # ---- 餐 ----

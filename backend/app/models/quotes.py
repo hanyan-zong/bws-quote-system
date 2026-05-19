@@ -96,6 +96,9 @@ class QuoteDay(Base):
 
     is_free: Mapped[bool] = mapped_column(Boolean, default=False)
     free_hours: Mapped[int] = mapped_column(Integer, default=0)  # 0=全程行程, 4=半天自由, 8=全天自由
+    # v0.9.3: 行程时长类型 — full=全天 / half=半天 / arrival=抵达日(下午到) / departure=离开日(上午送机+早餐)
+    # half/arrival/departure 三种: vehicle/guide 成本按 0.5 天算; departure 类型隐含 hotel_id=null + breakfast_included=true
+    day_type: Mapped[str] = mapped_column(String(20), default="full")
     template_id: Mapped[int | None] = mapped_column(ForeignKey("day_trip_templates.id"), nullable=True)
 
     hotel_id: Mapped[int | None] = mapped_column(ForeignKey("hotels.id"), nullable=True)
