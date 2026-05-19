@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from ..time_utils import now_utc
 from decimal import Decimal
 from typing import Any
 
@@ -169,7 +170,7 @@ def build_export_context(
 
     return {
         "meta": {
-            "exported_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
+            "exported_at": now_utc().strftime("%Y-%m-%d %H:%M UTC"),
             "exported_by": user.display_name if (user and user.display_name) else (
                 user.username if user else "system"
             ),

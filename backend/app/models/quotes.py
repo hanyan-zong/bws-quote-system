@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
+from ..utils.time_utils import now_utc
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -71,8 +72,8 @@ class Quote(Base):
     # v0.4 多用户:
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     agency_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, onupdate=now_utc)
 
     days: Mapped[list["QuoteDay"]] = relationship(
         back_populates="quote", cascade="all, delete-orphan", order_by="QuoteDay.day_index"
@@ -166,7 +167,7 @@ class GambleHistory(Base):
     feedback_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     feedback_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     feedback_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, onupdate=now_utc)
 
     quote: Mapped["Quote"] = relationship(back_populates="gamble_records")

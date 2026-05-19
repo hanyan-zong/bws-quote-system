@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, timedelta
+from ..utils.time_utils import now_utc
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -508,7 +509,7 @@ def get_strategy_stats(
     if user is not None and user.role in ("agent", "viewer"):
         raise HTTPException(403, "需要管理员或老板角色")
 
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = now_utc() - timedelta(days=days)
 
     # 基础查询: 在窗口内的 gamble_history (含 feedback)
     base = db.query(models.GambleHistory).filter(models.GambleHistory.created_at >= cutoff)

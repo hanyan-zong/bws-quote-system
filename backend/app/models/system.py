@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from ..utils.time_utils import now_utc
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -30,7 +31,7 @@ class ExchangeRate(Base):
     set_by: Mapped[str | None] = mapped_column(String(60), nullable=True)
     note: Mapped[str | None] = mapped_column(String(200), nullable=True)
     is_current: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
 
 
 class TimeBudgetConfig(Base):
@@ -45,7 +46,7 @@ class TimeBudgetConfig(Base):
     holiday_coef: Mapped[float] = mapped_column(Float, default=1.65)
     hotel_to_first_max_minutes: Mapped[int] = mapped_column(Integer, default=90)
     airport_buffer_minutes: Mapped[int] = mapped_column(Integer, default=60)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, onupdate=now_utc)
 
 
 class GambleConfig(Base):
@@ -58,7 +59,7 @@ class GambleConfig(Base):
     first_time_agency_factor: Mapped[float] = mapped_column(Float, default=0.5)
     default_margin_rate: Mapped[float] = mapped_column(Float, default=0.5)
     mice_wedding_max_cny: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=150)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, onupdate=now_utc)
 
 
 class AiExtraction(Base):
@@ -77,7 +78,7 @@ class AiExtraction(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending/confirmed/rejected
     confidence_avg: Mapped[float | None] = mapped_column(Float, nullable=True)
     warnings: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
@@ -110,8 +111,8 @@ class NoGambleRule(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     priority: Mapped[int] = mapped_column(Integer, default=0)  # 数大的先评估
     created_by: Mapped[str | None] = mapped_column(String(60), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, onupdate=now_utc)
 
 
 class GambleStrategy(Base):
@@ -148,8 +149,8 @@ class GambleStrategy(Base):
     priority: Mapped[int] = mapped_column(Integer, default=0)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[str | None] = mapped_column(String(60), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, onupdate=now_utc)
 
 
 class AttractionConflictRule(Base):
@@ -170,7 +171,7 @@ class AttractionConflictRule(Base):
     message: Mapped[str | None] = mapped_column(String(200), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[str | None] = mapped_column(String(60), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
 
 
 class AreaRule(Base):
@@ -195,8 +196,8 @@ class AreaRule(Base):
     message: Mapped[str | None] = mapped_column(String(200), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[str | None] = mapped_column(String(60), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, onupdate=now_utc)
 
 
 class Agency(Base):
@@ -215,8 +216,8 @@ class Agency(Base):
     status: Mapped[str] = mapped_column(String(20), default="active")  # active|suspended
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, onupdate=now_utc)
 
 
 class User(Base):
@@ -252,8 +253,8 @@ class User(Base):
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_login_ip: Mapped[str | None] = mapped_column(String(40), nullable=True)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, onupdate=now_utc)
 
 
 class Invitation(Base):
@@ -270,7 +271,7 @@ class Invitation(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     note: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_by_user_id: Mapped[int] = mapped_column(Integer)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
@@ -293,7 +294,7 @@ class ErpSyncEvent(Base):
     last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     correlation_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
     synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     synced_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -312,7 +313,7 @@ class ErpConfig(Base):
     retry_backoff_seconds: Mapped[int] = mapped_column(Integer, default=60)
     last_health_check_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_health_check_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, onupdate=now_utc)
 
 
 class UsageQuota(Base):
@@ -336,8 +337,8 @@ class UsageQuota(Base):
     reset_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # 下次重置时间
     overridden_by_admin: Mapped[bool] = mapped_column(Boolean, default=False)   # 标识非默认值
     note: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, onupdate=now_utc)
 
 
 class UsageLog(Base):
@@ -352,7 +353,7 @@ class UsageLog(Base):
     success: Mapped[bool] = mapped_column(Boolean, default=True)
     error_msg: Mapped[str | None] = mapped_column(String(300), nullable=True)
     meta_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # 比如 quote_id, file_name
-    used_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    used_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, index=True)
 
 
 class AiCorrection(Base):
@@ -367,4 +368,4 @@ class AiCorrection(Base):
     ai_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     user_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     reason: Mapped[str | None] = mapped_column(String(400), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)

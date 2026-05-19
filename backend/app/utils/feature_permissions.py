@@ -19,6 +19,7 @@ import calendar
 import json
 import logging
 from datetime import datetime, timedelta
+from .time_utils import now_utc
 from typing import Any
 
 from fastapi import HTTPException
@@ -208,7 +209,7 @@ def init_quotas_for_user(db: Session, user: models.User) -> int:
     existing = {
         q.feature for q in db.query(models.UsageQuota).filter_by(user_id=user.id).all()
     }
-    now = datetime.utcnow()
+    now = now_utc()
     created = 0
     for feature, (period, limit) in role_quotas.items():
         if feature in existing:
@@ -240,7 +241,7 @@ def _get_or_create_quota(db: Session, user: models.User, feature: str) -> models
     q = models.UsageQuota(
         user_id=user.id, feature=feature, period=period,
         limit_count=limit, used_count=0,
-        reset_at=_next_reset(datetime.utcnow(), period),
+        reset_at=_next_reset(now_utc(), period),
     )
     db.add(q)
     db.flush()
@@ -249,9 +250,9 @@ def _get_or_create_quota(db: Session, user: models.User, feature: str) -> models
 
 def _check_and_reset(q: models.UsageQuota) -> None:
     """如果到了 reset 时间, 把 used_count 归零."""
-    if q.reset_at and datetime.utcnow() >= q.reset_at:
+    if q.reset_at and now_utc() >= q.reset_at:
         q.used_count = 0
-        q.reset_at = _next_reset(datetime.utcnow(), q.period)
+        q.reset_at = _next_reset(now_utc(), q.period)
 
 
 def _log_usage(

@@ -8,6 +8,7 @@ import json
 import logging
 import secrets
 from datetime import datetime, timedelta
+from ..utils.time_utils import now_utc
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -329,7 +330,7 @@ def create_invitation(payload: InvitationIn, request: Request, db: Session = Dep
         role=payload.role,
         max_uses=payload.max_uses,
         used_count=0,
-        expires_at=datetime.utcnow() + timedelta(days=payload.expires_in_days),
+        expires_at=now_utc() + timedelta(days=payload.expires_in_days),
         note=payload.note,
         created_by_user_id=user.id,
     )
@@ -348,7 +349,7 @@ def revoke_invitation(iid: int, request: Request, db: Session = Depends(get_db))
         raise HTTPException(404)
     if user.role == "agency_owner" and inv.agency_id != user.agency_id:
         raise HTTPException(403)
-    inv.revoked_at = datetime.utcnow()
+    inv.revoked_at = now_utc()
     db.commit()
     return {"ok": True}
 
@@ -356,7 +357,7 @@ def revoke_invitation(iid: int, request: Request, db: Session = Depends(get_db))
 def _invitation_to_dict(inv: models.Invitation, db: Session) -> dict:
     agency = db.get(models.Agency, inv.agency_id)
     is_active = (
-        inv.revoked_at is None and inv.expires_at > datetime.utcnow()
+        inv.revoked_at is None and inv.expires_at > now_utc()
         and inv.used_count < inv.max_uses
     )
     return {
@@ -421,7 +422,7 @@ def mark_synced(eid: int, request: Request, db: Session = Depends(get_db)):
     if not ev:
         raise HTTPException(404)
     ev.status = "synced"
-    ev.synced_at = datetime.utcnow()
+    ev.synced_at = now_utc()
     ev.synced_by_user_id = user.id
     db.commit()
     return {"ok": True}
@@ -435,7 +436,7 @@ def skip_event(eid: int, request: Request, db: Session = Depends(get_db)):
     if not ev:
         raise HTTPException(404)
     ev.status = "skipped"
-    ev.synced_at = datetime.utcnow()
+    ev.synced_at = now_utc()
     ev.synced_by_user_id = user.id
     db.commit()
     return {"ok": True}
@@ -617,7 +618,7 @@ def admin_usage_logs(
     """使用日志 (审计). super_admin 全部; agency_owner 仅本社."""
     me = _require_user(request, db)
     _require_role(me, "super_admin", "agency_owner", "ops_manager")
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = now_utc() - timedelta(days=days)
     q = db.query(models.UsageLog).filter(models.UsageLog.used_at >= cutoff)
     if me.role == "agency_owner":
         q = q.filter(models.UsageLog.agency_id == me.agency_id)
@@ -726,7 +727,7 @@ def admin_review_pending_user(
             raise HTTPException(403, "agency_owner 不能批准 super_admin/ops_manager")
 
     target.reviewed_by_user_id = me.id
-    target.reviewed_at = datetime.utcnow()
+    target.reviewed_at = now_utc()
     target.review_note = payload.review_note
 
     if not payload.approve:
@@ -780,7 +781,7 @@ def admin_usage_stats(
     from sqlalchemy import func
     me = _require_user(request, db)
     _require_role(me, "super_admin", "ops_manager", "agency_owner")
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = now_utc() - timedelta(days=days)
 
     base = db.query(models.UsageLog).filter(models.UsageLog.used_at >= cutoff)
     if me.role == "agency_owner":

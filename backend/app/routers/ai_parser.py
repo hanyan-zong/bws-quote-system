@@ -5,6 +5,7 @@ import json
 import logging
 import shutil
 from datetime import date, datetime
+from ..utils.time_utils import now_utc
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -34,9 +35,9 @@ async def parse_upload(
     user = get_current_user(request, db)
     consume_quota(db, user, "ai_parse_resource", meta={"file": file.filename})
 
-    sub = settings.upload_dir / datetime.utcnow().strftime("%Y%m%d")
+    sub = settings.upload_dir / now_utc().strftime("%Y%m%d")
     sub.mkdir(parents=True, exist_ok=True)
-    safe_name = f"{datetime.utcnow().strftime('%H%M%S')}_{file.filename}"
+    safe_name = f"{now_utc().strftime('%H%M%S')}_{file.filename}"
     target = sub / safe_name
     with target.open("wb") as f:
         shutil.copyfileobj(file.file, f)
@@ -141,14 +142,14 @@ def confirm_extraction(eid: int, payload: ConfirmExtractionIn, db: Session = Dep
 
     rec.confirmed_json = json.dumps(payload.confirmed_resources, ensure_ascii=False)
     rec.status = "confirmed"
-    rec.confirmed_at = datetime.utcnow()
+    rec.confirmed_at = now_utc()
     db.commit()
 
     # 写文件日志, 持续优化用
     log_path = settings.log_dir / "ai_corrections.jsonl"
     with log_path.open("a", encoding="utf-8") as f:
         for c in payload.corrections or []:
-            f.write(json.dumps({"ts": datetime.utcnow().isoformat(), "extraction_id": rec.id, **c}, ensure_ascii=False) + "\n")
+            f.write(json.dumps({"ts": now_utc().isoformat(), "extraction_id": rec.id, **c}, ensure_ascii=False) + "\n")
 
     return {
         "ok": True,
@@ -313,9 +314,9 @@ async def parse_customer_itinerary(
     consume_quota(db, user, "ai_parse_itinerary", meta={"file": file.filename, "hint": hint})
 
     # 1) 落盘
-    sub = settings.upload_dir / datetime.utcnow().strftime("%Y%m%d")
+    sub = settings.upload_dir / now_utc().strftime("%Y%m%d")
     sub.mkdir(parents=True, exist_ok=True)
-    safe_name = f"itin_{datetime.utcnow().strftime('%H%M%S')}_{file.filename}"
+    safe_name = f"itin_{now_utc().strftime('%H%M%S')}_{file.filename}"
     target = sub / safe_name
     with target.open("wb") as f:
         shutil.copyfileobj(file.file, f)

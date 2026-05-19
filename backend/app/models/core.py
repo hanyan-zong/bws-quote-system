@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, time, datetime
+from ..utils.time_utils import now_utc
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -35,7 +36,7 @@ class Destination(Base):
     name_id: Mapped[str | None] = mapped_column(String(60), nullable=True)
     code: Mapped[str] = mapped_column(String(20), unique=True, index=True)
     timezone: Mapped[str] = mapped_column(String(30), default="Asia/Makassar")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
 
     hotels: Mapped[list["Hotel"]] = relationship(back_populates="destination", cascade="all, delete-orphan")
 
@@ -57,8 +58,8 @@ class Hotel(Base):
     airport_distance_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[int] = mapped_column(SmallInteger, default=1)  # 0 停用 1 启用
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, onupdate=now_utc)
 
     destination: Mapped["Destination"] = relationship(back_populates="hotels")
     rooms: Mapped[list["HotelRoom"]] = relationship(back_populates="hotel", cascade="all, delete-orphan")
@@ -260,7 +261,7 @@ class Distance(Base):
     # 该路段警告但允许的座位 (大于此值会出 warning, 大于 vehicle_max_seat 直接 fail)
     vehicle_warn_seat: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source: Mapped[str] = mapped_column(String(40), default="manual")
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, onupdate=now_utc)
 
 
 # ============================================================
@@ -279,7 +280,7 @@ class DayTripTemplate(Base):
     recommended_pax_max: Mapped[int] = mapped_column(Integer, default=99)
     difficulty: Mapped[str] = mapped_column(String(20), default="easy")  # easy/moderate/intense
     status: Mapped[int] = mapped_column(SmallInteger, default=1)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
 
     attractions: Mapped[list["TemplateAttraction"]] = relationship(
         back_populates="template", cascade="all, delete-orphan"

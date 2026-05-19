@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime
+from ..utils.time_utils import now_utc
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -44,7 +45,7 @@ class QuoteFeedbackIn(BaseModel):
 
 def _generate_quote_no() -> str:
     import random
-    return "Q" + datetime.utcnow().strftime("%Y%m%d%H%M%S") + f"{random.randint(0, 999):03d}"
+    return "Q" + now_utc().strftime("%Y%m%d%H%M%S") + f"{random.randint(0, 999):03d}"
 
 
 def _persist_days(quote: models.Quote, payload: QuoteIn, db: Session) -> None:
@@ -329,7 +330,7 @@ def submit_quote_feedback(
     latest.profit_actual_cny = Decimal(str(payload.actual_profit_cny))
     latest.won_or_lost = payload.won_or_lost
     latest.feedback_notes = payload.notes or ""
-    latest.feedback_at = datetime.utcnow()
+    latest.feedback_at = now_utc()
     if user:
         latest.feedback_by = user.id
 

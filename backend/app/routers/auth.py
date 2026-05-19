@@ -7,6 +7,7 @@ import logging
 import secrets
 import time
 from datetime import datetime, timedelta
+from ..utils.time_utils import now_utc
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -207,21 +208,21 @@ def login(body: LoginIn, request: Request, response: Response, db: Session = Dep
         raise HTTPException(401, "账号或密码错误")
 
     # 锁定检查
-    if user.locked_until and user.locked_until > datetime.utcnow():
-        secs = int((user.locked_until - datetime.utcnow()).total_seconds())
+    if user.locked_until and user.locked_until > now_utc():
+        secs = int((user.locked_until - now_utc()).total_seconds())
         raise HTTPException(403, f"账号已锁定 {secs} 秒后再试")
 
     if not _verify_password(body.password, user.password_hash):
         user.failed_login_count = (user.failed_login_count or 0) + 1
         if user.failed_login_count >= 5:
-            user.locked_until = datetime.utcnow() + timedelta(minutes=15)
+            user.locked_until = now_utc() + timedelta(minutes=15)
             user.failed_login_count = 0
         db.commit()
         raise HTTPException(401, "账号或密码错误")
 
     # 成功
     user.failed_login_count = 0
-    user.last_login_at = datetime.utcnow()
+    user.last_login_at = now_utc()
     user.last_login_ip = request.client.host if request.client else None
     db.commit()
 
@@ -268,7 +269,7 @@ def get_invitation_info(code: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "邀请码不存在")
     if inv.revoked_at:
         raise HTTPException(410, "邀请码已撤销")
-    if inv.expires_at < datetime.utcnow():
+    if inv.expires_at < now_utc():
         raise HTTPException(410, "邀请码已过期")
     if inv.used_count >= inv.max_uses:
         raise HTTPException(410, "邀请码已用完")
@@ -289,7 +290,7 @@ def register_by_invitation(
 ):
     """凭邀请码注册新用户."""
     inv = db.query(models.Invitation).filter_by(code=body.code).first()
-    if not inv or inv.revoked_at or inv.expires_at < datetime.utcnow() or inv.used_count >= inv.max_uses:
+    if not inv or inv.revoked_at or inv.expires_at < now_utc() or inv.used_count >= inv.max_uses:
         raise HTTPException(410, "邀请码无效或已过期")
 
     if len(body.username) < 4 or not body.username.replace("_", "").isalnum():
@@ -315,7 +316,7 @@ def register_by_invitation(
     inv.used_count += 1
     db.flush()
 
-    user.last_login_at = datetime.utcnow()
+    user.last_login_at = now_utc()
     user.last_login_ip = request.client.host if request.client else None
     db.flush()
 

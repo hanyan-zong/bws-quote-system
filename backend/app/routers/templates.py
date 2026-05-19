@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import shutil
 from datetime import datetime
+from ..utils.time_utils import now_utc
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -172,9 +173,9 @@ async def parse_template_upload(
     db: Session = Depends(get_db),
 ):
     """上传一日游文档,AI 抽取模板骨架 + 解析景点/餐厅名为现有资源 ID."""
-    sub = settings.upload_dir / "templates" / datetime.utcnow().strftime("%Y%m%d")
+    sub = settings.upload_dir / "templates" / now_utc().strftime("%Y%m%d")
     sub.mkdir(parents=True, exist_ok=True)
-    safe_name = f"{datetime.utcnow().strftime('%H%M%S')}_{file.filename}"
+    safe_name = f"{now_utc().strftime('%H%M%S')}_{file.filename}"
     target = sub / safe_name
     with target.open("wb") as f:
         shutil.copyfileobj(file.file, f)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from ..utils.time_utils import now_utc
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
@@ -73,7 +74,7 @@ def feedback(payload: GambleFeedbackIn, db: Session = Depends(get_db)):
     history.optional_tours_revenue_cny = payload.optional_tours_revenue_cny
     history.profit_actual_cny = payload.profit_actual_cny
     history.won_or_lost = payload.won_or_lost
-    history.updated_at = datetime.utcnow()
+    history.updated_at = now_utc()
 
     # ★ ERP 钩子: 自费实际数据回写事件
     quote = db.get(models.Quote, payload.quote_id)
