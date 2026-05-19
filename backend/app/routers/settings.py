@@ -22,8 +22,12 @@ from ..schemas import (
     TimeBudgetIn,
 )
 from .auth import get_current_user
+from ..utils.permissions import require_role
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+
+# v0.9.2: 设置写操作仅 super_admin (改的是全局规则, 影响所有 agency)
+_super_only = [Depends(require_role("super_admin"))]
 
 
 # ---------------- 汇率 ----------------
@@ -40,7 +44,7 @@ def get_exchange_rate(db: Session = Depends(get_db)):
     return {"rate_cny_to_idr": 2300, "effective_date": date.today().isoformat(), "set_by": "default"}
 
 
-@router.put("/exchange-rate")
+@router.put("/exchange-rate", dependencies=_super_only)
 def set_exchange_rate(payload: ExchangeRateIn, db: Session = Depends(get_db)):
     db.query(models.ExchangeRate).update({"is_current": False})
     rec = models.ExchangeRate(
@@ -72,7 +76,7 @@ def get_time_budget(db: Session = Depends(get_db)):
     }
 
 
-@router.put("/time-budget")
+@router.put("/time-budget", dependencies=_super_only)
 def set_time_budget(payload: TimeBudgetIn, db: Session = Depends(get_db)):
     rec = db.query(models.TimeBudgetConfig).filter_by(destination_id=None).first()
     if not rec:
@@ -100,7 +104,7 @@ def get_gamble_config(db: Session = Depends(get_db)):
     }
 
 
-@router.put("/gamble-config")
+@router.put("/gamble-config", dependencies=_super_only)
 def set_gamble_config(payload: GambleConfigIn, db: Session = Depends(get_db)):
     rec = db.query(models.GambleConfig).first()
     if not rec:
@@ -154,7 +158,7 @@ def list_area_rules(db: Session = Depends(get_db)):
     return [_area_rule_to_dict(r) for r in rows]
 
 
-@router.post("/area-rules")
+@router.post("/area-rules", dependencies=_super_only)
 def upsert_area_rule(payload: AreaRuleIn, db: Session = Depends(get_db)):
     if payload.severity not in ("warning", "error"):
         raise HTTPException(400, "severity 必须是 warning 或 error")
@@ -175,7 +179,7 @@ def upsert_area_rule(payload: AreaRuleIn, db: Session = Depends(get_db)):
     return {"id": r.id}
 
 
-@router.delete("/area-rules/{rid}")
+@router.delete("/area-rules/{rid}", dependencies=_super_only)
 def delete_area_rule(rid: int, db: Session = Depends(get_db)):
     r = db.get(models.AreaRule, rid)
     if not r:
@@ -216,7 +220,7 @@ def list_attraction_conflicts(db: Session = Depends(get_db)):
     return [_attr_conflict_to_dict(r, name_map) for r in rows]
 
 
-@router.post("/attraction-conflicts")
+@router.post("/attraction-conflicts", dependencies=_super_only)
 def upsert_attraction_conflict(payload: AttractionConflictRuleIn, db: Session = Depends(get_db)):
     if payload.severity not in ("warning", "error"):
         raise HTTPException(400, "severity 必须 warning|error")
@@ -241,7 +245,7 @@ def upsert_attraction_conflict(payload: AttractionConflictRuleIn, db: Session = 
     return {"id": r.id}
 
 
-@router.delete("/attraction-conflicts/{rid}")
+@router.delete("/attraction-conflicts/{rid}", dependencies=_super_only)
 def delete_attraction_conflict(rid: int, db: Session = Depends(get_db)):
     r = db.get(models.AttractionConflictRule, rid)
     if not r:
@@ -281,7 +285,7 @@ def list_gamble_strategies(db: Session = Depends(get_db)):
     return [_strategy_to_dict(r) for r in rows]
 
 
-@router.post("/gamble-strategies")
+@router.post("/gamble-strategies", dependencies=_super_only)
 def upsert_gamble_strategy(payload: GambleStrategyIn, db: Session = Depends(get_db)):
     if payload.id:
         r = db.get(models.GambleStrategy, payload.id)
@@ -303,7 +307,7 @@ def upsert_gamble_strategy(payload: GambleStrategyIn, db: Session = Depends(get_
     return _strategy_to_dict(r)
 
 
-@router.delete("/gamble-strategies/{rid}")
+@router.delete("/gamble-strategies/{rid}", dependencies=_super_only)
 def delete_gamble_strategy(rid: int, db: Session = Depends(get_db)):
     r = db.get(models.GambleStrategy, rid)
     if not r:
@@ -414,7 +418,7 @@ def preview_strategy_match(payload: GambleStrategyPreviewIn, db: Session = Depen
     }
 
 
-@router.post("/gamble-strategies/migrate-from-no-gamble")
+@router.post("/gamble-strategies/migrate-from-no-gamble", dependencies=_super_only)
 def migrate_no_gamble_to_strategies(db: Session = Depends(get_db)):
     """一次性把现有 NoGambleRule 全部迁移成 GambleStrategy(action=skip).
 

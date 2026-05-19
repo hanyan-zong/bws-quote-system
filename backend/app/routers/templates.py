@@ -15,9 +15,13 @@ from ..ai import parse_template_document
 from ..config import settings
 from ..database import get_db
 from ..schemas import TemplateIn
+from ..utils.permissions import require_role
 
 router = APIRouter(prefix="/templates", tags=["templates"])
 logger = logging.getLogger("bws.templates")
+
+# v0.9.2: 模板写操作要 admin 角色
+_admin_only = [Depends(require_role("super_admin", "ops_manager"))]
 
 
 @router.get("")
@@ -54,7 +58,7 @@ def list_templates(destination_code: str | None = None, db: Session = Depends(ge
     return out
 
 
-@router.post("")
+@router.post("", dependencies=_admin_only)
 def upsert_template(payload: TemplateIn, db: Session = Depends(get_db)):
     if payload.id:
         t = db.get(models.DayTripTemplate, payload.id)
@@ -165,7 +169,7 @@ def _resolve_restaurant_id(name_zh: str, db: Session, destination_id: int | None
     return like.id if like else None
 
 
-@router.post("/parse-document")
+@router.post("/parse-document", dependencies=_admin_only)
 async def parse_template_upload(
     file: UploadFile = File(...),
     hint: str | None = Form(None),
@@ -239,7 +243,7 @@ async def parse_template_upload(
     }
 
 
-@router.delete("/{tid}")
+@router.delete("/{tid}", dependencies=_admin_only)
 def delete_template(tid: int, db: Session = Depends(get_db)):
     t = db.get(models.DayTripTemplate, tid)
     if not t:

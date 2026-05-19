@@ -66,3 +66,42 @@ def admin_client(web_app):
     r = c.post("/api/v1/auth/login", json={"username": "admin", "password": "admin123"})
     assert r.status_code == 200, f"admin login failed: {r.status_code} {r.text}"
     return c
+
+
+@pytest.fixture(scope="session")
+def _agent_user():
+    """Session-scoped: 直接写库创建一个 agent 角色用户. 跟 admin 同 agency."""
+    from app.database import SessionLocal
+    from app import models
+    from app.routers.auth import _hash_password
+
+    db = SessionLocal()
+    try:
+        existing = db.query(models.User).filter_by(username="pytest_agent").first()
+        if existing:
+            return {"username": "pytest_agent", "password": "pytest_agent_pwd"}
+        agency = db.query(models.Agency).first()
+        assert agency is not None, "需要至少一个 agency (admin bootstrap 应已建本社)"
+        u = models.User(
+            username="pytest_agent",
+            password_hash=_hash_password("pytest_agent_pwd"),
+            display_name="pytest agent",
+            role="agent",
+            agency_id=agency.id,
+            status="active",
+            force_password_change=False,
+        )
+        db.add(u)
+        db.commit()
+        return {"username": "pytest_agent", "password": "pytest_agent_pwd"}
+    finally:
+        db.close()
+
+
+@pytest.fixture
+def agent_client(web_app, _agent_user):
+    """带 agent (普通业务员) session cookie 的 client. v0.9.2 admin gate 测试用."""
+    c = TestClient(web_app)
+    r = c.post("/api/v1/auth/login", json=_agent_user)
+    assert r.status_code == 200, f"agent login failed: {r.status_code} {r.text}"
+    return c

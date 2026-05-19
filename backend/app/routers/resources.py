@@ -11,8 +11,11 @@ from sqlalchemy.orm import Session, joinedload
 
 from .. import models
 from ..database import get_db
-from ..utils.permissions import filter_resource_list, filter_hotel_with_rooms
+from ..utils.permissions import filter_resource_list, filter_hotel_with_rooms, require_role
 from .auth import get_current_user
+
+# v0.9.2: 写操作要 admin 角色 (super_admin 内部公司 OP) — agent/viewer 即使 curl 也拒
+_admin_only = [Depends(require_role("super_admin", "ops_manager"))]
 from ..schemas import (
     AttractionIn,
     AttractionOut,
@@ -94,7 +97,7 @@ def list_hotels(
     return filter_hotel_with_rooms(out, user)
 
 
-@router.post("/hotels")
+@router.post("/hotels", dependencies=_admin_only)
 def create_or_update_hotel(payload: HotelIn, db: Session = Depends(get_db)):
     if payload.id:
         hotel = db.get(models.Hotel, payload.id)
@@ -135,7 +138,7 @@ def create_or_update_hotel(payload: HotelIn, db: Session = Depends(get_db)):
     return {"id": hotel.id, "message": "ok"}
 
 
-@router.delete("/hotels/{hotel_id}")
+@router.delete("/hotels/{hotel_id}", dependencies=_admin_only)
 def delete_hotel(hotel_id: int, db: Session = Depends(get_db)):
     h = db.get(models.Hotel, hotel_id)
     if not h:
@@ -185,7 +188,7 @@ def list_attractions(
     return filter_resource_list(rows, "attraction", user)
 
 
-@router.post("/attractions")
+@router.post("/attractions", dependencies=_admin_only)
 def upsert_attraction(payload: AttractionIn, db: Session = Depends(get_db)):
     if payload.id:
         a = db.get(models.Attraction, payload.id)
@@ -206,7 +209,7 @@ def upsert_attraction(payload: AttractionIn, db: Session = Depends(get_db)):
     return {"id": a.id}
 
 
-@router.delete("/attractions/{aid}")
+@router.delete("/attractions/{aid}", dependencies=_admin_only)
 def delete_attraction(aid: int, db: Session = Depends(get_db)):
     a = db.get(models.Attraction, aid)
     if not a:
@@ -245,7 +248,7 @@ def list_restaurants(request: Request, destination_code: str | None = Query(None
     return filter_resource_list(rows, "restaurant", user)
 
 
-@router.post("/restaurants")
+@router.post("/restaurants", dependencies=_admin_only)
 def upsert_restaurant(payload: RestaurantIn, db: Session = Depends(get_db)):
     if payload.id:
         r = db.get(models.Restaurant, payload.id)
@@ -265,7 +268,7 @@ def upsert_restaurant(payload: RestaurantIn, db: Session = Depends(get_db)):
     return {"id": r.id}
 
 
-@router.delete("/restaurants/{rid}")
+@router.delete("/restaurants/{rid}", dependencies=_admin_only)
 def delete_restaurant(rid: int, db: Session = Depends(get_db)):
     r = db.get(models.Restaurant, rid)
     if not r:
@@ -306,7 +309,7 @@ def list_vehicles(request: Request, destination_code: str | None = Query(None), 
     return filter_resource_list(rows, "vehicle", user)
 
 
-@router.post("/vehicles")
+@router.post("/vehicles", dependencies=_admin_only)
 def upsert_vehicle(payload: VehicleIn, db: Session = Depends(get_db)):
     if payload.id:
         v = db.get(models.Vehicle, payload.id)
@@ -326,7 +329,7 @@ def upsert_vehicle(payload: VehicleIn, db: Session = Depends(get_db)):
     return {"id": v.id}
 
 
-@router.delete("/vehicles/{vid}")
+@router.delete("/vehicles/{vid}", dependencies=_admin_only)
 def delete_vehicle(vid: int, db: Session = Depends(get_db)):
     v = db.get(models.Vehicle, vid)
     if not v:
@@ -363,7 +366,7 @@ def list_guides(request: Request, destination_code: str | None = Query(None), db
     return filter_resource_list(rows, "guide", user)
 
 
-@router.post("/guides")
+@router.post("/guides", dependencies=_admin_only)
 def upsert_guide(payload: GuideIn, db: Session = Depends(get_db)):
     if payload.id:
         g = db.get(models.Guide, payload.id)
@@ -382,7 +385,7 @@ def upsert_guide(payload: GuideIn, db: Session = Depends(get_db)):
     return {"id": g.id}
 
 
-@router.delete("/guides/{gid}")
+@router.delete("/guides/{gid}", dependencies=_admin_only)
 def delete_guide(gid: int, db: Session = Depends(get_db)):
     g = db.get(models.Guide, gid)
     if not g:
@@ -425,7 +428,7 @@ def list_optional_tours(request: Request, destination_code: str | None = Query(N
     return filter_resource_list(rows, "optional_tour", user)
 
 
-@router.post("/optional-tours")
+@router.post("/optional-tours", dependencies=_admin_only)
 def upsert_optional_tour(payload: OptionalTourIn, db: Session = Depends(get_db)):
     if payload.id:
         ot = db.get(models.OptionalTour, payload.id)
@@ -446,7 +449,7 @@ def upsert_optional_tour(payload: OptionalTourIn, db: Session = Depends(get_db))
     return {"id": ot.id}
 
 
-@router.delete("/optional-tours/{oid}")
+@router.delete("/optional-tours/{oid}", dependencies=_admin_only)
 def delete_optional_tour(oid: int, db: Session = Depends(get_db)):
     ot = db.get(models.OptionalTour, oid)
     if not ot:
@@ -501,7 +504,7 @@ def list_simple(kind: str, request: Request, destination_code: str | None = Quer
     return filter_resource_list(out, rtype_map.get(kind, kind), user)
 
 
-@router.post("/simple/{kind}")
+@router.post("/simple/{kind}", dependencies=_admin_only)
 def upsert_simple(kind: str, payload: dict, db: Session = Depends(get_db)):
     """统一新增/更新 SPA / 水上 / 下午茶."""
     Model = SIMPLE_MODELS.get(kind)
@@ -523,7 +526,7 @@ def upsert_simple(kind: str, payload: dict, db: Session = Depends(get_db)):
     return {"id": obj.id}
 
 
-@router.delete("/simple/{kind}/{rid}")
+@router.delete("/simple/{kind}/{rid}", dependencies=_admin_only)
 def delete_simple(kind: str, rid: int, db: Session = Depends(get_db)):
     Model = SIMPLE_MODELS.get(kind)
     if not Model:

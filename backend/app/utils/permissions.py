@@ -95,7 +95,10 @@ def current_user_optional(request: Request, db: Session) -> models.User | None:
 
 def require_role(*allowed_roles: str):
     """装饰器工厂 — 用作 FastAPI Depends 强制角色检查."""
-    def _dep(request: Request, db: Session) -> models.User:
+    from fastapi import Depends
+    from ..database import get_db
+
+    def _dep(request: Request, db: Session = Depends(get_db)) -> models.User:
         from ..routers.auth import get_current_user
         user = get_current_user(request, db)
         if user is None:
