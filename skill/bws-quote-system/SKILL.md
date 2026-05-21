@@ -764,3 +764,58 @@ $env:PYTHONIOENCODING="utf-8"
 ### 已知未做(真要做需专项立项)
 
 - **彻底走 alembic 唯一 schema 来源**:当前 `init_db` 仍 `create_all` 建表(ALTER 列表已删,新字段走 alembic);真正"alembic 唯一"需要 autogenerate 0001 反映完整 v0.8.x schema + 改 `init_db` 为 "alembic upgrade head" + 探测无 `alembic_version` 表时自动 stamp。sqlite autogenerate 假阳性需要逐条人工核对,工期 1-2 小时
+
+---
+
+## 十五、维护规范 (2026-05-21 起强制)
+
+### 1. 开工 60 秒自检(进项目 cwd 第一件事)
+
+```bash
+.venv/Scripts/python.exe -m pip show bws-quote   # 必须显示 Version: <pyproject.toml 当前 version>
+./bws.bat --help                                  # 必须输出 5 行子命令,不能 ModuleNotFoundError
+.venv/Scripts/python.exe -m pytest backend/tests/ -x  # 必须 30 全绿 (28s)
+```
+
+任何一条 fail → **不要开工**,先按 troubleshooting 修。
+
+**为什么强制**:2026-05-21 发生过 `bws.exe` 入口 ModuleNotFoundError(根因 `~ws_quote-0.8.4.dist-info` pip 半卸载残骸),memory 里写"已推 GitHub v0.9.0"而实际 v0.9.3 入口已坏。**memory 是快照不是 live 状态**,实测是唯一真相。
+
+### 2. 升级 `pyproject.toml` 的 `version` 字段必跑
+
+```bash
+.venv/Scripts/python.exe -m pip install -e .   # editable 重装,刷新 entry-point
+```
+
+不跑 → site-packages 会半卸载老 dist-info 留 `~*` 残骸,`bws.exe` 跑不通且 `pip show` 报 not found。
+
+修法:
+```powershell
+Remove-Item ".venv\Lib\site-packages\~ws_quote-*.dist-info" -Recurse -Force
+.venv\Scripts\python.exe -m pip install -e .
+```
+
+(待 P0-1 `bws doctor` 实现后,这步会被自动检测出来。)
+
+### 3. 项目级权限白名单 `.claude/settings.json`
+
+2026-05-21 起跟随仓库,内容:
+- `defaultMode: "acceptEdits"` — Edit/Write 文件改动自动通过
+- `permissions.allow` ~60 条 — 覆盖 venv 全套可执行 / bws.bat 所有子命令 / git 全流程(含 push 到 bws-quote-system)/ 文件操作 / 本机 curl / gh PR 创建 / docker compose / npm node
+- `permissions.deny` 20+ 条 — catastrophic 拦截(rm -rf 根级 / git push --force / git reset --hard / git branch -D / dd / mkfs / fork bomb)
+
+调整原则:
+- 用户嫌烦某条 → 从询问移到 `allow`
+- 用户怕某条 → 从 `allow` 移到 `deny`,或加到 `permissions.ask`(P0-3 待实现)
+- 修改后立即生效,Claude Code 下次会话自动加载
+
+### 4. 扫描脚本统计当前痛点
+
+`scripts/scan_perm_prompts.py`(2026-05-21 加)统计最近 N 个会话 jsonl 的 Bash/MCP 频次:
+```bash
+.venv/Scripts/python.exe scripts/scan_perm_prompts.py --sessions 20 --top 30
+```
+
+用于判断哪些命令该加 allow / 哪些该收紧。**不**自动修改 settings,只输出统计。
+
+参见 [[下次深度优化方向_2026-05-21_权限+SKILL]] P0/P1 排期。
