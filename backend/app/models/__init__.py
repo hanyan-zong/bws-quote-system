@@ -41,6 +41,13 @@ from .system import (
     UsageQuota,
     UsageLog,
 )
+from .pricing import (
+    SEASON_BANDS,
+    SeasonCalendar,
+    RoomRate,
+    Surcharge,
+    HotelPackage,
+)
 
 __all__ = [
     "Destination",
@@ -79,4 +86,9 @@ __all__ = [
     "ErpConfig",
     "UsageQuota",
     "UsageLog",
+    "SEASON_BANDS",
+    "SeasonCalendar",
+    "RoomRate",
+    "Surcharge",
+    "HotelPackage",
 ]

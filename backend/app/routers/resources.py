@@ -23,12 +23,16 @@ from ..schemas import (
     GuideOut,
     HotelIn,
     HotelOut,
+    HotelPackageIn,
     HotelRoomIn,
     OptionalTourIn,
     OptionalTourOut,
     RestaurantIn,
     RestaurantOut,
+    RoomRateIn,
+    SeasonCalendarIn,
     SimpleResourceIn,
+    SurchargeIn,
     VehicleIn,
     VehicleOut,
 )
@@ -535,5 +539,221 @@ def delete_simple(kind: str, rid: int, db: Session = Depends(get_db)):
     if not obj:
         raise HTTPException(404)
     db.delete(obj)
+    db.commit()
+    return {"ok": True}
+
+
+# ============================================================
+#  v0.9.4 — 季节多档定价 / 附加费 / 节日捆绑包 CRUD
+# ============================================================
+def _date_iso(d):
+    return d.isoformat() if d else None
+
+
+# ---- SeasonCalendar 全局季节日历 ----
+@router.get("/season-calendars")
+def list_season_calendars(db: Session = Depends(get_db)):
+    rows = db.query(models.SeasonCalendar).order_by(models.SeasonCalendar.date_from).all()
+    return [
+        {
+            "id": r.id,
+            "name": r.name,
+            "season_band": r.season_band,
+            "date_from": _date_iso(r.date_from),
+            "date_to": _date_iso(r.date_to),
+            "priority": r.priority,
+            "destination_code": r.destination_code,
+            "note": r.note,
+        }
+        for r in rows
+    ]
+
+
+@router.post("/season-calendars", dependencies=_admin_only)
+def upsert_season_calendar(payload: SeasonCalendarIn, db: Session = Depends(get_db)):
+    if payload.id:
+        r = db.get(models.SeasonCalendar, payload.id)
+        if not r:
+            raise HTTPException(404)
+    else:
+        r = models.SeasonCalendar()
+        db.add(r)
+    for f in ["name", "season_band", "date_from", "date_to", "priority", "destination_code", "note"]:
+        setattr(r, f, getattr(payload, f))
+    db.commit()
+    db.refresh(r)
+    return {"id": r.id}
+
+
+@router.delete("/season-calendars/{cid}", dependencies=_admin_only)
+def delete_season_calendar(cid: int, db: Session = Depends(get_db)):
+    r = db.get(models.SeasonCalendar, cid)
+    if not r:
+        raise HTTPException(404)
+    db.delete(r)
+    db.commit()
+    return {"ok": True}
+
+
+# ---- RoomRate 房型多档价 ----
+@router.get("/room-rates")
+def list_room_rates(room_id: int | None = Query(None), db: Session = Depends(get_db)):
+    q = db.query(models.RoomRate)
+    if room_id is not None:
+        q = q.filter_by(room_id=room_id)
+    rows = q.all()
+    return [
+        {
+            "id": r.id,
+            "room_id": r.room_id,
+            "season_band": r.season_band,
+            "cost_idr": float(r.cost_idr),
+            "valid_from": _date_iso(r.valid_from),
+            "valid_to": _date_iso(r.valid_to),
+            "note": r.note,
+        }
+        for r in rows
+    ]
+
+
+@router.post("/room-rates", dependencies=_admin_only)
+def upsert_room_rate(payload: RoomRateIn, db: Session = Depends(get_db)):
+    if payload.id:
+        r = db.get(models.RoomRate, payload.id)
+        if not r:
+            raise HTTPException(404)
+    else:
+        # 防重复: 同 room+band+valid_from 不重复建,直接更新
+        existing = (
+            db.query(models.RoomRate)
+            .filter_by(room_id=payload.room_id, season_band=payload.season_band, valid_from=payload.valid_from)
+            .first()
+        )
+        if existing:
+            r = existing
+        else:
+            r = models.RoomRate()
+            db.add(r)
+    for f in ["room_id", "season_band", "cost_idr", "valid_from", "valid_to", "note"]:
+        setattr(r, f, getattr(payload, f))
+    db.commit()
+    db.refresh(r)
+    return {"id": r.id}
+
+
+@router.delete("/room-rates/{rid}", dependencies=_admin_only)
+def delete_room_rate(rid: int, db: Session = Depends(get_db)):
+    r = db.get(models.RoomRate, rid)
+    if not r:
+        raise HTTPException(404)
+    db.delete(r)
+    db.commit()
+    return {"ok": True}
+
+
+# ---- Surcharge 附加费 ----
+@router.get("/surcharges")
+def list_surcharges(hotel_id: int | None = Query(None), db: Session = Depends(get_db)):
+    q = db.query(models.Surcharge)
+    if hotel_id is not None:
+        # 取该酒店 + 全局
+        from sqlalchemy import or_
+        q = q.filter(or_(models.Surcharge.hotel_id == hotel_id, models.Surcharge.hotel_id.is_(None)))
+    rows = q.order_by(models.Surcharge.id).all()
+    return [
+        {
+            "id": s.id,
+            "hotel_id": s.hotel_id,
+            "name": s.name,
+            "charge_type": s.charge_type,
+            "calc_method": s.calc_method,
+            "amount": float(s.amount),
+            "season_band": s.season_band,
+            "valid_from": _date_iso(s.valid_from),
+            "valid_to": _date_iso(s.valid_to),
+            "active": s.active,
+            "note": s.note,
+        }
+        for s in rows
+    ]
+
+
+@router.post("/surcharges", dependencies=_admin_only)
+def upsert_surcharge(payload: SurchargeIn, db: Session = Depends(get_db)):
+    if payload.id:
+        s = db.get(models.Surcharge, payload.id)
+        if not s:
+            raise HTTPException(404)
+    else:
+        s = models.Surcharge()
+        db.add(s)
+    for f in ["hotel_id", "name", "charge_type", "calc_method", "amount", "season_band",
+              "valid_from", "valid_to", "active", "note"]:
+        setattr(s, f, getattr(payload, f))
+    db.commit()
+    db.refresh(s)
+    return {"id": s.id}
+
+
+@router.delete("/surcharges/{sid}", dependencies=_admin_only)
+def delete_surcharge(sid: int, db: Session = Depends(get_db)):
+    s = db.get(models.Surcharge, sid)
+    if not s:
+        raise HTTPException(404)
+    db.delete(s)
+    db.commit()
+    return {"ok": True}
+
+
+# ---- HotelPackage 节日捆绑包 ----
+@router.get("/hotel-packages")
+def list_hotel_packages(hotel_id: int | None = Query(None), db: Session = Depends(get_db)):
+    q = db.query(models.HotelPackage)
+    if hotel_id is not None:
+        q = q.filter_by(hotel_id=hotel_id)
+    rows = q.order_by(models.HotelPackage.valid_from).all()
+    return [
+        {
+            "id": p.id,
+            "hotel_id": p.hotel_id,
+            "name": p.name,
+            "season_band": p.season_band,
+            "valid_from": _date_iso(p.valid_from),
+            "valid_to": _date_iso(p.valid_to),
+            "mandatory": p.mandatory,
+            "cost_idr_per_room": float(p.cost_idr_per_room),
+            "cost_idr_per_pax": float(p.cost_idr_per_pax),
+            "includes": p.includes,
+            "replaces_dinner": p.replaces_dinner,
+            "active": p.active,
+            "note": p.note,
+        }
+        for p in rows
+    ]
+
+
+@router.post("/hotel-packages", dependencies=_admin_only)
+def upsert_hotel_package(payload: HotelPackageIn, db: Session = Depends(get_db)):
+    if payload.id:
+        p = db.get(models.HotelPackage, payload.id)
+        if not p:
+            raise HTTPException(404)
+    else:
+        p = models.HotelPackage()
+        db.add(p)
+    for f in ["hotel_id", "name", "season_band", "valid_from", "valid_to", "mandatory",
+              "cost_idr_per_room", "cost_idr_per_pax", "includes", "replaces_dinner", "active", "note"]:
+        setattr(p, f, getattr(payload, f))
+    db.commit()
+    db.refresh(p)
+    return {"id": p.id}
+
+
+@router.delete("/hotel-packages/{pid}", dependencies=_admin_only)
+def delete_hotel_package(pid: int, db: Session = Depends(get_db)):
+    p = db.get(models.HotelPackage, pid)
+    if not p:
+        raise HTTPException(404)
+    db.delete(p)
     db.commit()
     return {"ok": True}

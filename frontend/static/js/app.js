@@ -418,5 +418,6 @@ app.component('ai-uploader', C.AiUploader);
 app.component('template-manager', C.TemplateManager);
 app.component('settings-panel', C.SettingsPanel);
 app.component('quote-history', C.QuoteHistory);
+app.component('seasonal-pricing-manager', C.SeasonalPricingManager);
 
 app.mount('#app');

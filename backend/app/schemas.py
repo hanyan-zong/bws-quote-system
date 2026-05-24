@@ -378,6 +378,66 @@ class GambleStrategyIn(BaseModel):
     active: bool = True
 
 
+# ============================================================
+#  v0.9.4 — 季节多档定价 / 附加费 / 节日捆绑包 (手动录入 schema)
+# ============================================================
+class RoomRateIn(BaseModel):
+    id: Optional[int] = None
+    room_id: int
+    season_band: Literal["low", "shoulder", "high", "peak", "holiday"] = "shoulder"
+    cost_idr: Decimal = Decimal(0)
+    valid_from: Optional[_date] = None
+    valid_to: Optional[_date] = None
+    note: Optional[str] = None
+
+
+class SeasonCalendarIn(BaseModel):
+    id: Optional[int] = None
+    name: str
+    season_band: Literal["low", "shoulder", "high", "peak", "holiday"]
+    date_from: _date
+    date_to: _date
+    priority: int = 0
+    destination_code: Optional[str] = None
+    note: Optional[str] = None
+
+
+class SurchargeIn(BaseModel):
+    id: Optional[int] = None
+    hotel_id: Optional[int] = None  # null = 全局
+    name: str
+    # v0.9.4: 学校假期类附加费 — 中国家长出游高峰, 酒店通常额外加价
+    # summer_break: 暑期 (7-8 月) / winter_break: 寒假 (1-2 月) / national_day_break: 国庆 (10/1-10/7)
+    charge_type: Literal[
+        "tax", "service_fee", "resort_fee", "tourist_tax",
+        "summer_break", "winter_break", "national_day_break",
+        "other",
+    ] = "other"
+    calc_method: Literal["percent", "fixed_per_room_night", "fixed_per_pax_night", "fixed_per_stay"] = "percent"
+    amount: Decimal = Decimal(0)
+    season_band: Optional[str] = None  # null 或 "high,peak" 逗号分隔
+    valid_from: Optional[_date] = None
+    valid_to: Optional[_date] = None
+    active: bool = True
+    note: Optional[str] = None
+
+
+class HotelPackageIn(BaseModel):
+    id: Optional[int] = None
+    hotel_id: int
+    name: str
+    season_band: Optional[str] = None
+    valid_from: _date
+    valid_to: _date
+    mandatory: bool = False
+    cost_idr_per_room: Decimal = Decimal(0)
+    cost_idr_per_pax: Decimal = Decimal(0)
+    includes: Optional[str] = None
+    replaces_dinner: bool = False
+    active: bool = True
+    note: Optional[str] = None
+
+
 class GambleStrategyPreviewIn(BaseModel):
     """模拟一份行程信号, 看哪条策略命中(用户在 UI 试错用)."""
 

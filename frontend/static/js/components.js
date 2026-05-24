@@ -4180,8 +4180,436 @@ const QuoteHistory = {
   `
 };
 
+// ============================================================
+//  v0.9.4 — 季节多档定价 / 附加费 / 节日捆绑包 管理面板
+// ============================================================
+const SEASON_BAND_OPTS = [
+  { value: 'low',      label: '淡季',   color: '#909399' },
+  { value: 'shoulder', label: '平季',   color: '#67c23a' },
+  { value: 'high',     label: '旺季',   color: '#e6a23c' },
+  { value: 'peak',     label: '高峰',   color: '#f56c6c' },
+  { value: 'holiday',  label: '节日',   color: '#9b59b6' },
+];
+
+const CHARGE_TYPE_OPTS = [
+  { value: 'tax',                 label: '政府税' },
+  { value: 'service_fee',         label: '服务费' },
+  { value: 'resort_fee',          label: '度假村费' },
+  { value: 'tourist_tax',         label: '旅游税' },
+  { value: 'summer_break',        label: '🏖 暑期附加 (7-8 月)' },
+  { value: 'winter_break',        label: '❄️ 寒假附加 (1-2 月)' },
+  { value: 'national_day_break',  label: '🇨🇳 国庆附加 (10/1-10/7)' },
+  { value: 'other',               label: '其他' },
+];
+
+const CALC_METHOD_OPTS = [
+  { value: 'percent',                label: '百分比 (在房费上叠加)' },
+  { value: 'fixed_per_room_night',   label: 'IDR/房/晚' },
+  { value: 'fixed_per_pax_night',    label: 'IDR/人/晚' },
+  { value: 'fixed_per_stay',         label: 'IDR/整次入住' },
+];
+
+const SeasonalPricingManager = {
+  props: ['destinations'],
+  data() {
+    return {
+      activeSubTab: 'calendar',
+      loading: false,
+      calendars: [],
+      surcharges: [],
+      packages: [],
+      hotels: [],          // 用于 packages/surcharges 关联酒店下拉
+      editDialog: false,
+      editKind: '',        // calendar | surcharge | package
+      editForm: {},
+      saving: false,
+      // 选项常量(透传到模板)
+      SEASON_BAND_OPTS,
+      CHARGE_TYPE_OPTS,
+      CALC_METHOD_OPTS,
+    };
+  },
+  watch: {
+    activeSubTab(v) { this.loadSubTab(v); },
+  },
+  computed: {
+    hotelMap() {
+      const m = {};
+      this.hotels.forEach(h => { m[h.id] = h.name_zh; });
+      return m;
+    },
+  },
+  async mounted() {
+    // 预载酒店列表(packages / surcharges 用)
+    try {
+      const r = await http.get('/resources/hotels');
+      this.hotels = r.data || [];
+    } catch (e) { /* 静默 */ }
+    this.loadSubTab(this.activeSubTab);
+  },
+  methods: {
+    bandMeta(code) {
+      return SEASON_BAND_OPTS.find(o => o.value === code) || { label: code, color: '#909399' };
+    },
+    async loadSubTab(tab) {
+      this.loading = true;
+      try {
+        if (tab === 'calendar') {
+          this.calendars = (await http.get('/resources/season-calendars')).data;
+        } else if (tab === 'surcharge') {
+          this.surcharges = (await http.get('/resources/surcharges')).data;
+        } else if (tab === 'package') {
+          this.packages = (await http.get('/resources/hotel-packages')).data;
+        }
+      } catch (e) {
+        ElementPlus.ElMessage.error('加载失败:' + (e.message || e));
+      } finally { this.loading = false; }
+    },
+    openCreate(kind) {
+      this.editKind = kind;
+      if (kind === 'calendar') {
+        this.editForm = { name: '', season_band: 'shoulder', date_from: '', date_to: '',
+                          priority: 0, destination_code: null, note: '' };
+      } else if (kind === 'surcharge') {
+        this.editForm = { hotel_id: null, name: '', charge_type: 'tax', calc_method: 'percent',
+                          amount: 0, season_band: null, valid_from: null, valid_to: null,
+                          active: true, note: '' };
+      } else if (kind === 'package') {
+        this.editForm = { hotel_id: null, name: '', season_band: 'holiday',
+                          valid_from: '', valid_to: '', mandatory: true,
+                          cost_idr_per_room: 0, cost_idr_per_pax: 0,
+                          includes: '', replaces_dinner: false, active: true, note: '' };
+      }
+      this.editDialog = true;
+    },
+    openEdit(kind, row) {
+      this.editKind = kind;
+      this.editForm = { ...row };
+      this.editDialog = true;
+    },
+    async save() {
+      this.saving = true;
+      try {
+        const paths = {
+          calendar: '/resources/season-calendars',
+          surcharge: '/resources/surcharges',
+          package: '/resources/hotel-packages',
+        };
+        // 简单校验
+        if (this.editKind === 'calendar') {
+          if (!this.editForm.name || !this.editForm.date_from || !this.editForm.date_to) {
+            ElementPlus.ElMessage.warning('名称/起始日期/结束日期必填'); this.saving = false; return;
+          }
+        } else if (this.editKind === 'package') {
+          if (!this.editForm.hotel_id || !this.editForm.name || !this.editForm.valid_from || !this.editForm.valid_to) {
+            ElementPlus.ElMessage.warning('酒店/名称/有效期必填'); this.saving = false; return;
+          }
+        } else if (this.editKind === 'surcharge') {
+          if (!this.editForm.name) {
+            ElementPlus.ElMessage.warning('附加费名称必填'); this.saving = false; return;
+          }
+        }
+        await http.post(paths[this.editKind], this.editForm);
+        ElementPlus.ElMessage.success('已保存');
+        this.editDialog = false;
+        const tabMap = { calendar: 'calendar', surcharge: 'surcharge', package: 'package' };
+        this.loadSubTab(tabMap[this.editKind]);
+      } catch (e) {
+        ElementPlus.ElMessage.error('保存失败:' + (e.response?.data?.detail || e.message));
+      } finally { this.saving = false; }
+    },
+    async remove(kind, row) {
+      try {
+        await ElementPlus.ElMessageBox.confirm(`确认删除 ${row.name}?`, '提示', { type: 'warning' });
+      } catch (e) { return; }
+      const paths = {
+        calendar: `/resources/season-calendars/${row.id}`,
+        surcharge: `/resources/surcharges/${row.id}`,
+        package: `/resources/hotel-packages/${row.id}`,
+      };
+      try {
+        await http.delete(paths[kind]);
+        ElementPlus.ElMessage.success('已删除');
+        this.loadSubTab(kind);
+      } catch (e) {
+        ElementPlus.ElMessage.error('删除失败:' + e.message);
+      }
+    },
+    fmtIDR(v) {
+      if (v == null) return '—';
+      const n = Number(v);
+      if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M';
+      if (n >= 1_000)     return (n / 1_000).toFixed(0) + 'k';
+      return n.toString();
+    },
+  },
+  template: `
+    <div class="seasonal-pricing-manager">
+      <el-alert type="info" :closable="false" style="margin-bottom:12px">
+        <strong>季节多档定价 · v0.9.4</strong> ·
+        全局季节日历定档(淡/平/旺/高峰/节日),酒店附加费(税/旅游税),节日捆绑包(圣诞 Gala / 新年烟花)。
+        计价时:日期 → 季节档 → 房型对应价 + 叠加附加费 + 强制节日包。
+      </el-alert>
+
+      <el-tabs v-model="activeSubTab" type="border-card">
+
+        <!-- ============= 季节日历 ============= -->
+        <el-tab-pane label="📅 季节日历" name="calendar">
+          <div style="margin-bottom:10px">
+            <el-button type="primary" size="small" @click="openCreate('calendar')">+ 新增日历区间</el-button>
+            <span style="color:#909399;font-size:12px;margin-left:12px">
+              区间重叠时按 priority 大优先 (节日=10 / 高峰=8 / 旺=5 / 平=2 / 淡=1 建议值)
+            </span>
+          </div>
+          <el-table :data="calendars" v-loading="loading" border stripe size="small">
+            <el-table-column prop="name" label="名称" min-width="160" />
+            <el-table-column label="季节档" width="100">
+              <template #default="s">
+                <el-tag :style="{background: bandMeta(s.row.season_band).color, color:'#fff', border:'none'}">
+                  {{ bandMeta(s.row.season_band).label }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="date_from" label="起" width="110" />
+            <el-table-column prop="date_to"   label="止" width="110" />
+            <el-table-column prop="priority" label="优先级" width="80" align="right" />
+            <el-table-column prop="destination_code" label="目的地" width="80">
+              <template #default="s">{{ s.row.destination_code || '全部' }}</template>
+            </el-table-column>
+            <el-table-column prop="note" label="备注" min-width="120" show-overflow-tooltip />
+            <el-table-column label="操作" width="140" fixed="right">
+              <template #default="s">
+                <el-button size="small" @click="openEdit('calendar', s.row)">改</el-button>
+                <el-button size="small" type="danger" @click="remove('calendar', s.row)">删</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+
+        <!-- ============= 附加费 ============= -->
+        <el-tab-pane label="💰 附加费" name="surcharge">
+          <div style="margin-bottom:10px">
+            <el-button type="primary" size="small" @click="openCreate('surcharge')">+ 新增附加费</el-button>
+            <span style="color:#909399;font-size:12px;margin-left:12px">
+              hotel 留空 = 全局生效(适合政府税/旅游税);设 hotel 后仅该酒店应用
+            </span>
+          </div>
+          <el-table :data="surcharges" v-loading="loading" border stripe size="small">
+            <el-table-column prop="name" label="名称" min-width="160" />
+            <el-table-column label="类型" width="100">
+              <template #default="s">
+                {{ (CHARGE_TYPE_OPTS.find(o => o.value === s.row.charge_type) || {}).label || s.row.charge_type }}
+              </template>
+            </el-table-column>
+            <el-table-column label="计算方式" min-width="170">
+              <template #default="s">
+                {{ (CALC_METHOD_OPTS.find(o => o.value === s.row.calc_method) || {}).label || s.row.calc_method }}
+              </template>
+            </el-table-column>
+            <el-table-column label="金额/比率" width="120" align="right">
+              <template #default="s">
+                <strong>{{ s.row.calc_method === 'percent' ? (s.row.amount + '%') : fmtIDR(s.row.amount) }}</strong>
+              </template>
+            </el-table-column>
+            <el-table-column label="适用酒店" width="160">
+              <template #default="s">
+                {{ s.row.hotel_id ? (hotelMap[s.row.hotel_id] || ('#' + s.row.hotel_id)) : '全部' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="season_band" label="限定季节" width="100">
+              <template #default="s">{{ s.row.season_band || '全部' }}</template>
+            </el-table-column>
+            <el-table-column label="启用" width="60" align="center">
+              <template #default="s">{{ s.row.active ? '✓' : '✗' }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="140" fixed="right">
+              <template #default="s">
+                <el-button size="small" @click="openEdit('surcharge', s.row)">改</el-button>
+                <el-button size="small" type="danger" @click="remove('surcharge', s.row)">删</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+
+        <!-- ============= 节日捆绑包 ============= -->
+        <el-tab-pane label="🎄 节日捆绑包" name="package">
+          <div style="margin-bottom:10px">
+            <el-button type="primary" size="small" @click="openCreate('package')">+ 新增捆绑包</el-button>
+            <span style="color:#909399;font-size:12px;margin-left:12px">
+              mandatory=true 时,在有效期内住该酒店自动叠加;replaces_dinner=true 会跳过当晚另设的晚餐
+            </span>
+          </div>
+          <el-table :data="packages" v-loading="loading" border stripe size="small">
+            <el-table-column prop="name" label="名称" min-width="160" />
+            <el-table-column label="酒店" width="180">
+              <template #default="s">{{ hotelMap[s.row.hotel_id] || ('#' + s.row.hotel_id) }}</template>
+            </el-table-column>
+            <el-table-column prop="valid_from" label="起" width="110" />
+            <el-table-column prop="valid_to"   label="止" width="110" />
+            <el-table-column label="强制" width="60" align="center">
+              <template #default="s">{{ s.row.mandatory ? '✓' : '—' }}</template>
+            </el-table-column>
+            <el-table-column label="房费 IDR" width="100" align="right">
+              <template #default="s">{{ fmtIDR(s.row.cost_idr_per_room) }}</template>
+            </el-table-column>
+            <el-table-column label="人头 IDR" width="100" align="right">
+              <template #default="s">{{ fmtIDR(s.row.cost_idr_per_pax) }}</template>
+            </el-table-column>
+            <el-table-column label="替换晚餐" width="80" align="center">
+              <template #default="s">{{ s.row.replaces_dinner ? '✓' : '—' }}</template>
+            </el-table-column>
+            <el-table-column prop="includes" label="包含" min-width="150" show-overflow-tooltip />
+            <el-table-column label="操作" width="140" fixed="right">
+              <template #default="s">
+                <el-button size="small" @click="openEdit('package', s.row)">改</el-button>
+                <el-button size="small" type="danger" @click="remove('package', s.row)">删</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
+
+      <!-- ============= 编辑 Dialog ============= -->
+      <el-dialog v-model="editDialog" :title="(editForm.id ? '编辑' : '新增') + ' · ' +
+                ({calendar:'季节日历', surcharge:'附加费', package:'节日捆绑包'}[editKind] || '')" width="600px">
+        <el-form label-position="top" v-if="editKind === 'calendar'">
+          <el-form-item label="名称 ★">
+            <el-input v-model="editForm.name" placeholder="如: 2026 圣诞新年旺季" />
+          </el-form-item>
+          <el-form-item label="季节档 ★">
+            <el-select v-model="editForm.season_band" style="width:100%">
+              <el-option v-for="o in SEASON_BAND_OPTS" :key="o.value" :value="o.value" :label="o.label" />
+            </el-select>
+          </el-form-item>
+          <el-row :gutter="12">
+            <el-col :span="12"><el-form-item label="起始日期 ★">
+              <el-date-picker v-model="editForm.date_from" type="date" value-format="YYYY-MM-DD" style="width:100%" />
+            </el-form-item></el-col>
+            <el-col :span="12"><el-form-item label="结束日期 ★">
+              <el-date-picker v-model="editForm.date_to" type="date" value-format="YYYY-MM-DD" style="width:100%" />
+            </el-form-item></el-col>
+          </el-row>
+          <el-row :gutter="12">
+            <el-col :span="12"><el-form-item label="优先级 (越大越优先)">
+              <el-input-number v-model="editForm.priority" :min="0" :max="100" />
+            </el-form-item></el-col>
+            <el-col :span="12"><el-form-item label="目的地 (留空=全部)">
+              <el-select v-model="editForm.destination_code" clearable style="width:100%">
+                <el-option v-for="d in destinations" :key="d.id" :value="d.code" :label="d.name_zh + ' (' + d.code + ')'" />
+              </el-select>
+            </el-form-item></el-col>
+          </el-row>
+          <el-form-item label="备注">
+            <el-input v-model="editForm.note" type="textarea" :rows="2" />
+          </el-form-item>
+        </el-form>
+
+        <el-form label-position="top" v-if="editKind === 'surcharge'">
+          <el-form-item label="名称 ★">
+            <el-input v-model="editForm.name" placeholder="如: Government Tax 21%" />
+          </el-form-item>
+          <el-row :gutter="12">
+            <el-col :span="12"><el-form-item label="类型 ★">
+              <el-select v-model="editForm.charge_type" style="width:100%">
+                <el-option v-for="o in CHARGE_TYPE_OPTS" :key="o.value" :value="o.value" :label="o.label" />
+              </el-select>
+            </el-form-item></el-col>
+            <el-col :span="12"><el-form-item label="计算方式 ★">
+              <el-select v-model="editForm.calc_method" style="width:100%">
+                <el-option v-for="o in CALC_METHOD_OPTS" :key="o.value" :value="o.value" :label="o.label" />
+              </el-select>
+            </el-form-item></el-col>
+          </el-row>
+          <el-form-item :label="editForm.calc_method === 'percent' ? '百分比 (如 21 = 21%)' : '金额 IDR'">
+            <el-input-number v-model="editForm.amount" :min="0" :step="editForm.calc_method === 'percent' ? 0.5 : 10000" style="width:100%" />
+          </el-form-item>
+          <el-row :gutter="12">
+            <el-col :span="12"><el-form-item label="适用酒店 (留空=全部)">
+              <el-select v-model="editForm.hotel_id" clearable filterable style="width:100%">
+                <el-option v-for="h in hotels" :key="h.id" :value="h.id" :label="h.name_zh" />
+              </el-select>
+            </el-form-item></el-col>
+            <el-col :span="12"><el-form-item label="限定季节 (留空=全部; 多档逗号 high,peak)">
+              <el-input v-model="editForm.season_band" placeholder="如 high,peak,holiday" clearable />
+            </el-form-item></el-col>
+          </el-row>
+          <el-row :gutter="12">
+            <el-col :span="12"><el-form-item label="生效起 (可空)">
+              <el-date-picker v-model="editForm.valid_from" type="date" value-format="YYYY-MM-DD" style="width:100%" />
+            </el-form-item></el-col>
+            <el-col :span="12"><el-form-item label="生效止 (可空)">
+              <el-date-picker v-model="editForm.valid_to" type="date" value-format="YYYY-MM-DD" style="width:100%" />
+            </el-form-item></el-col>
+          </el-row>
+          <el-form-item>
+            <el-switch v-model="editForm.active" active-text="启用" inactive-text="禁用" />
+          </el-form-item>
+          <el-form-item label="备注">
+            <el-input v-model="editForm.note" type="textarea" :rows="2" />
+          </el-form-item>
+        </el-form>
+
+        <el-form label-position="top" v-if="editKind === 'package'">
+          <el-form-item label="酒店 ★">
+            <el-select v-model="editForm.hotel_id" filterable style="width:100%">
+              <el-option v-for="h in hotels" :key="h.id" :value="h.id" :label="h.name_zh" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="名称 ★">
+            <el-input v-model="editForm.name" placeholder="如: 圣诞夜 Gala Dinner" />
+          </el-form-item>
+          <el-row :gutter="12">
+            <el-col :span="12"><el-form-item label="有效起 ★">
+              <el-date-picker v-model="editForm.valid_from" type="date" value-format="YYYY-MM-DD" style="width:100%" />
+            </el-form-item></el-col>
+            <el-col :span="12"><el-form-item label="有效止 ★">
+              <el-date-picker v-model="editForm.valid_to" type="date" value-format="YYYY-MM-DD" style="width:100%" />
+            </el-form-item></el-col>
+          </el-row>
+          <el-row :gutter="12">
+            <el-col :span="12"><el-form-item label="季节档">
+              <el-select v-model="editForm.season_band" style="width:100%">
+                <el-option v-for="o in SEASON_BAND_OPTS" :key="o.value" :value="o.value" :label="o.label" />
+              </el-select>
+            </el-form-item></el-col>
+            <el-col :span="12"><el-form-item>
+              <el-switch v-model="editForm.mandatory" active-text="强制叠加" inactive-text="可选" />
+            </el-form-item></el-col>
+          </el-row>
+          <el-row :gutter="12">
+            <el-col :span="12"><el-form-item label="房费 IDR (按房算)">
+              <el-input-number v-model="editForm.cost_idr_per_room" :min="0" :step="100000" style="width:100%" />
+            </el-form-item></el-col>
+            <el-col :span="12"><el-form-item label="人头费 IDR (按人算)">
+              <el-input-number v-model="editForm.cost_idr_per_pax" :min="0" :step="50000" style="width:100%" />
+            </el-form-item></el-col>
+          </el-row>
+          <el-form-item label="包含内容">
+            <el-input v-model="editForm.includes" type="textarea" :rows="2" placeholder="如: Gala Dinner + 烟花 + 红酒 1 瓶" />
+          </el-form-item>
+          <el-form-item>
+            <el-switch v-model="editForm.replaces_dinner" active-text="替换当晚晚餐" inactive-text="另算" />
+          </el-form-item>
+          <el-form-item>
+            <el-switch v-model="editForm.active" active-text="启用" inactive-text="禁用" />
+          </el-form-item>
+          <el-form-item label="备注">
+            <el-input v-model="editForm.note" type="textarea" :rows="2" />
+          </el-form-item>
+        </el-form>
+
+        <template #footer>
+          <el-button @click="editDialog = false">取消</el-button>
+          <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+        </template>
+      </el-dialog>
+    </div>
+  `
+};
+
 // 注册全局组件
 window.__BWS_COMPONENTS = {
   QuoteBuilder, ResourceManager, AiUploader,
-  TemplateManager, SettingsPanel, QuoteHistory
+  TemplateManager, SettingsPanel, QuoteHistory,
+  SeasonalPricingManager,
 };

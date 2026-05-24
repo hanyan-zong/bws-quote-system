@@ -289,6 +289,108 @@ def _insert_resource(rtype: str, data: dict, db: Session) -> int:
         db.flush()
         return ot.id
 
+    # ============================================================
+    #  v0.9.4 — 季节多档定价 / 附加费 / 节日包
+    # ============================================================
+    if rtype == "room_rate":
+        # 找/建 hotel + room (按 hotel_name_zh + room_type 唯一)
+        hotel_name = data.get("hotel_name_zh")
+        room_type = data.get("room_type") or "Standard"
+        if not hotel_name:
+            raise ValueError("room_rate 必须含 hotel_name_zh")
+        hotel = db.query(models.Hotel).filter_by(name_zh=hotel_name).first()
+        if not hotel:
+            hotel = models.Hotel(destination_id=destination_id, name_zh=hotel_name)
+            db.add(hotel)
+            db.flush()
+        room = (
+            db.query(models.HotelRoom)
+            .filter_by(hotel_id=hotel.id, room_type=room_type)
+            .first()
+        )
+        if not room:
+            room = models.HotelRoom(hotel_id=hotel.id, room_type=room_type, max_occupancy=2)
+            db.add(room)
+            db.flush()
+        rr = models.RoomRate(
+            room_id=room.id,
+            season_band=data.get("season_band") or "shoulder",
+            cost_idr=data.get("cost_idr") or 0,
+            valid_from=_to_date(data.get("valid_from")),
+            valid_to=_to_date(data.get("valid_to")),
+            note=data.get("note"),
+        )
+        db.add(rr)
+        db.flush()
+        return rr.id
+
+    if rtype == "season_calendar":
+        sc = models.SeasonCalendar(
+            name=data.get("name") or "未命名季节",
+            season_band=data.get("season_band") or "shoulder",
+            date_from=_to_date(data.get("date_from")),
+            date_to=_to_date(data.get("date_to")),
+            priority=int(data.get("priority") or 0),
+            destination_code=data.get("destination_code"),
+            note=data.get("note"),
+        )
+        db.add(sc)
+        db.flush()
+        return sc.id
+
+    if rtype == "surcharge":
+        hotel_name = data.get("hotel_name_zh")
+        hotel_id = None
+        if hotel_name:
+            hotel = db.query(models.Hotel).filter_by(name_zh=hotel_name).first()
+            if not hotel:
+                hotel = models.Hotel(destination_id=destination_id, name_zh=hotel_name)
+                db.add(hotel)
+                db.flush()
+            hotel_id = hotel.id
+        sg = models.Surcharge(
+            hotel_id=hotel_id,
+            name=data.get("name") or "未命名附加费",
+            charge_type=data.get("charge_type") or "other",
+            calc_method=data.get("calc_method") or "percent",
+            amount=data.get("amount") or 0,
+            season_band=data.get("season_band"),
+            valid_from=_to_date(data.get("valid_from")),
+            valid_to=_to_date(data.get("valid_to")),
+            active=bool(data.get("active", True)),
+            note=data.get("note"),
+        )
+        db.add(sg)
+        db.flush()
+        return sg.id
+
+    if rtype == "hotel_package":
+        hotel_name = data.get("hotel_name_zh")
+        if not hotel_name:
+            raise ValueError("hotel_package 必须含 hotel_name_zh")
+        hotel = db.query(models.Hotel).filter_by(name_zh=hotel_name).first()
+        if not hotel:
+            hotel = models.Hotel(destination_id=destination_id, name_zh=hotel_name)
+            db.add(hotel)
+            db.flush()
+        hp = models.HotelPackage(
+            hotel_id=hotel.id,
+            name=data.get("name") or "未命名捆绑包",
+            season_band=data.get("season_band"),
+            valid_from=_to_date(data.get("valid_from")),
+            valid_to=_to_date(data.get("valid_to")),
+            mandatory=bool(data.get("mandatory", False)),
+            cost_idr_per_room=data.get("cost_idr_per_room") or 0,
+            cost_idr_per_pax=data.get("cost_idr_per_pax") or 0,
+            includes=data.get("includes"),
+            replaces_dinner=bool(data.get("replaces_dinner", False)),
+            active=bool(data.get("active", True)),
+            note=data.get("note"),
+        )
+        db.add(hp)
+        db.flush()
+        return hp.id
+
     raise ValueError(f"未知资源类型: {rtype}")
 
 

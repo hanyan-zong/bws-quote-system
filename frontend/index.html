@@ -442,6 +442,11 @@
           <ai-uploader @confirmed="loadAllResources"></ai-uploader>
         </el-tab-pane>
 
+        <!-- ============= Tab 3.5 · 季节定价 (v0.9.4) ============= -->
+        <el-tab-pane v-if="isAdmin" label="🎄 季节定价" name="seasonal">
+          <seasonal-pricing-manager :destinations="destinations"></seasonal-pricing-manager>
+        </el-tab-pane>
+
         <!-- ============= Tab 4 · 一日游模板 (仅管理类角色) ============= -->
         <el-tab-pane v-if="isAdmin" label="🗺 一日游模板" name="templates">
           <template-manager
@@ -474,7 +479,7 @@
 <script src="/static/vendor/element-plus-zh-cn.min.js"></script>
 <script src="/static/vendor/element-plus-icons.iife.min.js"></script>
 <script src="/static/vendor/axios.min.js"></script>
-<script src="/static/js/components.js?v=18"></script>
-<script src="/static/js/app.js?v=15"></script>
+<script src="/static/js/components.js?v=19"></script>
+<script src="/static/js/app.js?v=16"></script>
 </body>
 </html>
