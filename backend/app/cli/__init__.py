@@ -6,6 +6,7 @@
     bws server  start|status|stop    后端服务运维
     bws db      init|migrate|query|stats  数据库管理
     bws doctor                       环境自检 (entry-point / 残骸 / 版本 / alembic)
+    bws version show|bump            版本号统一管理 + 自动重装 (根治漂移)
 """
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ import argparse
 import os
 import sys
 
-from . import data_cmd, db_cmd, dev_cmd, doctor_cmd, quote_cmd, server_cmd
+from . import data_cmd, db_cmd, dev_cmd, doctor_cmd, quote_cmd, server_cmd, version_cmd
 from ._common import CliError
 
 
@@ -41,6 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     db_cmd.register(subparsers)
     dev_cmd.register(subparsers)
     doctor_cmd.register(subparsers)
+    version_cmd.register(subparsers)
 
     return parser
 
