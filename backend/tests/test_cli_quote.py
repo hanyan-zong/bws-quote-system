@@ -114,3 +114,99 @@ def test_quote_calc_dry_run_does_not_persist(bws, seed_quote):
     )
     assert after["profit_cny_per_pax"] == "0"
     assert after["feasibility_status"] == "unchecked"
+
+
+# -------- export (CSV / xlsx) --------
+
+
+def test_quote_export_csv_default_headers(bws, seed_quote, tmp_path):
+    seed_quote(quote_no="Q-EXP-001", agency_name="AlphaTours")
+    out = tmp_path / "quotes.csv"
+    r = bws("quote", "export", str(out))
+    assert r.returncode == 0, r.stderr
+    assert out.exists()
+    text = out.read_text(encoding="utf-8-sig")
+    assert "报价单号" in text  # 业务友好中文表头
+    assert "Q-EXP-001" in text
+    assert "AlphaTours" in text
+
+
+def test_quote_export_csv_has_utf8_bom(bws, seed_quote, tmp_path):
+    """裸字节: 必须以 UTF-8 BOM 开头, 保证 Excel 双击不乱码."""
+    seed_quote(quote_no="Q-EXP-BOM")
+    out = tmp_path / "bom.csv"
+    r = bws("quote", "export", str(out))
+    assert r.returncode == 0, r.stderr
+    assert out.read_bytes()[:3] == b"\xef\xbb\xbf"
+
+
+def test_quote_export_json_summary(bws, seed_quote, tmp_path):
+    import json
+
+    seed_quote(quote_no="Q-EXP-JSON")
+    out = tmp_path / "s.csv"
+    r = bws("quote", "export", str(out), "--json")
+    assert r.returncode == 0, r.stderr
+    summary = json.loads(r.stdout)
+    assert summary["exported"] == 1
+    assert summary["format"] == "csv"
+
+
+def test_quote_export_all_columns(bws, seed_quote, tmp_path):
+    """--all 导出原始列名, 不用中文表头."""
+    seed_quote(quote_no="Q-EXP-ALL")
+    out = tmp_path / "all.csv"
+    r = bws("quote", "export", str(out), "--all")
+    assert r.returncode == 0, r.stderr
+    text = out.read_text(encoding="utf-8-sig")
+    assert "cost_idr_total" in text  # 原始列, 默认视图没有
+    assert "报价单号" not in text
+
+
+def test_quote_export_bad_extension_is_usage_error(bws, seed_quote, tmp_path):
+    """未知扩展名又没 --format -> 用法错误(退码 2), 不产出文件."""
+    seed_quote(quote_no="Q-EXP-BAD")
+    out = tmp_path / "x.txt"
+    r = bws("quote", "export", str(out))
+    assert r.returncode == 2, f"stderr={r.stderr}"
+    assert not out.exists()
+
+
+def test_quote_export_format_override(bws, seed_quote, tmp_path):
+    """--format 覆盖扩展名: .dat 也能当 csv 写."""
+    seed_quote(quote_no="Q-EXP-OVR")
+    out = tmp_path / "x.dat"
+    r = bws("quote", "export", str(out), "--format", "csv")
+    assert r.returncode == 0, r.stderr
+    assert "报价单号" in out.read_text(encoding="utf-8-sig")
+
+
+def test_quote_export_agency_filter_no_match(bws, seed_quote, tmp_path):
+    """筛选无命中: 仍写表头, 0 数据行."""
+    seed_quote(quote_no="Q-EXP-FLT", agency_name="AlphaTours")
+    out = tmp_path / "none.csv"
+    r = bws("quote", "export", str(out), "--agency", "NoSuchAgency")
+    assert r.returncode == 0, r.stderr
+    lines = [ln for ln in out.read_text(encoding="utf-8-sig").splitlines() if ln.strip()]
+    assert len(lines) == 1  # 只有表头
+    assert "报价单号" in lines[0]
+
+
+def test_quote_export_xlsx(bws, seed_quote, tmp_path):
+    """xlsx: 装了 openpyxl 则生成并可读回; 没装则退码 1 + 安装提示."""
+    seed_quote(quote_no="Q-EXP-XLSX")
+    out = tmp_path / "quotes.xlsx"
+    r = bws("quote", "export", str(out))
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        assert r.returncode == 1
+        assert "openpyxl" in (r.stdout + r.stderr)
+        return
+    assert r.returncode == 0, r.stderr
+    assert out.exists()
+    ws = load_workbook(out).active
+    headers = [c.value for c in ws[1]]
+    assert "报价单号" in headers
+    values = [c.value for row in ws.iter_rows(min_row=2) for c in row]
+    assert "Q-EXP-XLSX" in values
