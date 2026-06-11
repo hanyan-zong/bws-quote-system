@@ -96,3 +96,6 @@ bws_export_*.sql
 # ============================================================
 .dockerignore.bak
 docker-compose.override.yml
+
+# mobile/ ? 2026-06-11 ?????? hanyan-zong/bws-mobile
+/mobile/
