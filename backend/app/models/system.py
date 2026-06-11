@@ -275,6 +275,24 @@ class Invitation(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class RefreshToken(Base):
+    """APP 端 JWT 双 token 的 refresh token 撤销表 (v0.10).
+
+    库里只存 sha256(token), 不存原文 — 撤库泄露也无法直接冒用.
+    旋转: 每次 /auth/refresh 旧 token 标记 revoked_at 并发新 token.
+    """
+
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    client_info: Mapped[str | None] = mapped_column(String(200), nullable=True)  # UA/设备标识, 排查异常登录用
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+
+
 class ErpSyncEvent(Base):
     """ERP 同步事件队列 (v0.4 留位 / v0.5 worker 真正消费)."""
 

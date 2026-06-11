@@ -54,14 +54,22 @@ def parse_cookie_value(value: str) -> tuple[int, int] | None:
 
 
 # ============================================================
-#  会话辅助
+#  会话辅助 — v0.10 起 cookie (web) 与 Bearer access token (APP) 双通道
+#  access token 与 cookie 同构 "{user_id}.{expiry}.{sig}", 复用同一套签名/解析
 # ============================================================
+def _bearer_token(request: Request) -> str | None:
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:].strip() or None
+    return None
+
+
 def get_current_user(request: Request, db: Session) -> Optional["models.User"]:
-    """从 cookie 解出当前用户; 无效返回 None."""
-    cookie = request.cookies.get(settings.auth_cookie_name)
-    if not cookie:
+    """从 cookie (web) 或 Bearer access token (APP) 解出当前用户; 无效返回 None."""
+    credential = request.cookies.get(settings.auth_cookie_name) or _bearer_token(request)
+    if not credential:
         return None
-    parsed = parse_cookie_value(cookie)
+    parsed = parse_cookie_value(credential)
     if not parsed:
         return None
     user_id, _ = parsed
@@ -72,17 +80,14 @@ def get_current_user(request: Request, db: Session) -> Optional["models.User"]:
 
 
 def is_authenticated(request: Request) -> bool:
-    """v0.4 兼容入口 — 仍走 cookie 校验.
-
-    注意: 不再用 .env 单密码; auth_required 现在永远 True (有用户系统在).
-    """
+    """auth_gate 入口 — cookie 有效放行 (web 不变), 否则查 Bearer (APP)."""
     if not settings.auth_required:
         # 兼容: 完全关闭口令门 (BWS_AUTH_USERNAME 留空 + 无 users 表)
         return True
-    cookie = request.cookies.get(settings.auth_cookie_name)
-    if not cookie:
+    credential = request.cookies.get(settings.auth_cookie_name) or _bearer_token(request)
+    if not credential:
         return False
-    return parse_cookie_value(cookie) is not None
+    return parse_cookie_value(credential) is not None
 
 
 # ============================================================
@@ -137,6 +142,15 @@ class ChangePasswordIn(BaseModel):
     new_password: str
 
 
+# v0.10 APP 端双 token
+class RefreshIn(BaseModel):
+    refresh_token: str
+
+
+class LogoutIn(BaseModel):
+    refresh_token: str | None = None
+
+
 # v0.8.3 主密钥自助解锁
 class MasterUnlockIn(BaseModel):
     master_password: str  # = .env BWS_AUTH_PASSWORD
@@ -183,8 +197,12 @@ def me(request: Request, db: Session = Depends(get_db)):
 #  /login — 用 username + password 登录
 #  兼容: users 表为空时, 仍允许 .env 老账号登录(自动创建 super_admin)
 # ============================================================
-@router.post("/login")
-def login(body: LoginIn, request: Request, response: Response, db: Session = Depends(get_db)):
+def _authenticate(body: LoginIn, request: Request, db: Session) -> models.User:
+    """username+password → User; 失败抛 HTTPException.
+
+    状态检查 / 5 次失败锁 15min / .env bootstrap 都在这 — /login 与 /auth/token 共用,
+    保证 web 与 APP 的锁定策略永远一致.
+    """
     # v0.4: 优先查 users 表
     user: models.User | None = db.query(models.User).filter_by(username=body.username).first()
 
@@ -225,7 +243,12 @@ def login(body: LoginIn, request: Request, response: Response, db: Session = Dep
     user.last_login_at = now_utc()
     user.last_login_ip = request.client.host if request.client else None
     db.commit()
+    return user
 
+
+@router.post("/login")
+def login(body: LoginIn, request: Request, response: Response, db: Session = Depends(get_db)):
+    user = _authenticate(body, request, db)
     response.set_cookie(
         key=settings.auth_cookie_name,
         value=make_cookie_value(user.id),
@@ -238,9 +261,90 @@ def login(body: LoginIn, request: Request, response: Response, db: Session = Dep
 
 
 @router.post("/logout")
-def logout(response: Response):
+def logout(response: Response, body: LogoutIn | None = None, db: Session = Depends(get_db)):
+    """web: 删 cookie; APP: body 带 refresh_token 时一并撤销."""
     response.delete_cookie(settings.auth_cookie_name, path="/")
+    if body and body.refresh_token:
+        db.query(models.RefreshToken).filter_by(
+            token_hash=_hash_refresh(body.refresh_token), revoked_at=None,
+        ).update({"revoked_at": now_utc()})
+        db.commit()
     return {"ok": True}
+
+
+# ============================================================
+#  v0.10 — APP 端双 token (短命 access + 旋转 refresh, 设计见
+#  docs/APP版本设计方案_2026-06-11.md 3.1 节)
+#  access: 与 cookie 同构的 HMAC 签名串, 30min, 无状态可验证;
+#  refresh: 随机串, 库里只存 sha256, 旋转刷新 + 重放即全撤销.
+# ============================================================
+ACCESS_TOKEN_MINUTES = 30
+REFRESH_TOKEN_DAYS = 14
+
+
+def make_access_token(user_id: int) -> str:
+    expiry = int(time.time()) + ACCESS_TOKEN_MINUTES * 60
+    payload = f"{user_id}.{expiry}"
+    return f"{payload}.{_sign(payload)}"
+
+
+def _hash_refresh(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _token_pair_response(db: Session, user: models.User, request: Request) -> dict:
+    """发一对新 token (access + refresh) 并落库 refresh hash."""
+    refresh_plain = secrets.token_urlsafe(48)
+    client_info = (request.headers.get("User-Agent") or "")[:200] or None
+    db.add(models.RefreshToken(
+        user_id=user.id,
+        token_hash=_hash_refresh(refresh_plain),
+        expires_at=now_utc() + timedelta(days=REFRESH_TOKEN_DAYS),
+        client_info=client_info,
+    ))
+    db.commit()
+    return {
+        "token_type": "bearer",
+        "access_token": make_access_token(user.id),
+        "expires_in": ACCESS_TOKEN_MINUTES * 60,
+        "refresh_token": refresh_plain,
+        "user": _user_to_dict(user, db),
+    }
+
+
+@router.post("/token")
+def issue_token(body: LoginIn, request: Request, db: Session = Depends(get_db)):
+    """APP 端登录: username+password → access(30min) + refresh(14d)."""
+    user = _authenticate(body, request, db)
+    return _token_pair_response(db, user, request)
+
+
+@router.post("/refresh")
+def refresh_token(body: RefreshIn, request: Request, db: Session = Depends(get_db)):
+    """旋转刷新: 旧 refresh 作废 + 发新对.
+
+    已撤销 token 再次出现 = 重放迹象 (token 可能泄露), 撤销该用户全部 refresh 强制重登.
+    """
+    row = db.query(models.RefreshToken).filter_by(
+        token_hash=_hash_refresh(body.refresh_token),
+    ).first()
+    if not row:
+        raise HTTPException(401, "refresh token 无效")
+    if row.revoked_at is not None:
+        db.query(models.RefreshToken).filter_by(user_id=row.user_id, revoked_at=None).update(
+            {"revoked_at": now_utc()},
+        )
+        db.commit()
+        logger.warning("Revoked refresh token reused — all sessions revoked for user_id=%s", row.user_id)
+        raise HTTPException(401, "refresh token 已失效, 请重新登录")
+    if row.expires_at < now_utc():
+        raise HTTPException(401, "refresh token 已过期, 请重新登录")
+    user = db.get(models.User, row.user_id)
+    if not user or user.status != "active":
+        raise HTTPException(401, "账号不可用")
+
+    row.revoked_at = now_utc()
+    return _token_pair_response(db, user, request)
 
 
 @router.post("/change-password")
