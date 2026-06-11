@@ -107,6 +107,41 @@ def test_agent_can_get_condition_types(agent_client):
 
 
 # ============================================================
+#  AI 资源采集链路 (2026-06-11 堵漏): agent 一律 403
+#  extracted_json 含原始 cost_idr, GET 也不开放
+# ============================================================
+def test_agent_get_extractions_403(agent_client):
+    r = agent_client.get("/api/v1/ai/extractions")
+    assert r.status_code == 403, r.text
+
+
+def test_agent_get_extraction_detail_403(agent_client):
+    r = agent_client.get("/api/v1/ai/extractions/1")
+    assert r.status_code == 403, r.text
+
+
+def test_agent_confirm_extraction_403(agent_client):
+    r = agent_client.post("/api/v1/ai/extractions/1/confirm", json={
+        "confirmed_resources": [], "corrections": [],
+    })
+    assert r.status_code == 403, r.text
+
+
+def test_agent_ai_parse_403(agent_client):
+    r = agent_client.post(
+        "/api/v1/ai/parse",
+        files={"file": ("x.txt", b"dummy", "text/plain")},
+    )
+    assert r.status_code == 403, r.text
+
+
+def test_admin_can_list_extractions(admin_client):
+    r = admin_client.get("/api/v1/ai/extractions")
+    assert r.status_code == 200, r.text
+    assert isinstance(r.json(), list)
+
+
+# ============================================================
 #  Admin 仍可写 (回归)
 # ============================================================
 def test_admin_can_post_attraction(admin_client):

@@ -831,6 +831,11 @@ const ResourceManager = {
       editForm: {},
       editKind: '',
       saving: false,
+      // 房型 × 季节档 矩阵 (room_id → band → cost_idr); rateIds 记已存在的 RoomRate.id, rateOrig 是加载快照
+      rateMatrix: {},
+      rateIds: {},
+      rateOrig: {},
+      SEASON_BAND_OPTS,   // 声明在本文件后部, data() 运行时才求值, 无 TDZ 问题 (SeasonalPanel 同款)
     };
   },
   watch: {
@@ -1053,6 +1058,7 @@ const ResourceManager = {
       this.editForm = JSON.parse(JSON.stringify(row));
       // hotels 嵌套 rooms
       if (this.activeKind === 'hotels' && !this.editForm.rooms) this.editForm.rooms = [];
+      if (this.activeKind === 'hotels') this.loadRoomRates();   // 异步加载季节多档价矩阵, 不阻塞弹窗
       this.editDialog = true;
     },
     addRoom() {
@@ -1060,6 +1066,48 @@ const ResourceManager = {
     },
     removeRoom(idx) {
       this.editForm.rooms.splice(idx, 1);
+    },
+
+    // ---- 房型 × 季节档 矩阵 (v0.9.4 API 的 UI 收尾) ----
+    async loadRoomRates() {
+      this.rateMatrix = {}; this.rateIds = {}; this.rateOrig = {};
+      const roomIds = (this.editForm.rooms || []).filter(r => r.id).map(r => r.id);
+      // 先初始化空行, 即使请求失败模板也不会因 undefined 报错
+      for (const rid of roomIds) { this.rateMatrix[rid] = {}; this.rateIds[rid] = {}; this.rateOrig[rid] = {}; }
+      if (!roomIds.length) return;
+      try {
+        const { data } = await http.get('/resources/room-rates');
+        for (const rt of (data || [])) {
+          if (!this.rateMatrix[rt.room_id]) continue;
+          if (rt.valid_from) continue;   // 带生效期的"某年特价"不进矩阵, 避免被基础价误覆盖
+          this.rateMatrix[rt.room_id][rt.season_band] = rt.cost_idr;
+          this.rateIds[rt.room_id][rt.season_band] = rt.id;
+          this.rateOrig[rt.room_id][rt.season_band] = rt.cost_idr;
+        }
+      } catch (e) { /* 矩阵加载失败不阻断酒店编辑 */ }
+    },
+    async saveRoomRates() {
+      // 只同步仍存在于表单中的房型 (被删的房型后端已连 rate 一起清, 不能再 upsert 复活)
+      const liveIds = new Set((this.editForm.rooms || []).filter(r => r.id).map(r => String(r.id)));
+      const tasks = [];
+      for (const rid of Object.keys(this.rateMatrix)) {
+        if (!liveIds.has(String(rid))) continue;
+        for (const opt of SEASON_BAND_OPTS) {
+          const band = opt.value;
+          const val = this.rateMatrix[rid][band];
+          const orig = this.rateOrig[rid]?.[band];
+          const rateId = this.rateIds[rid]?.[band] || null;
+          const has = val != null && Number(val) > 0;
+          if (has && Number(val) !== Number(orig ?? NaN)) {
+            tasks.push(http.post('/resources/room-rates', {
+              id: rateId, room_id: Number(rid), season_band: band, cost_idr: Number(val),
+            }));
+          } else if (!has && rateId) {
+            tasks.push(http.delete(`/resources/room-rates/${rateId}`));
+          }
+        }
+      }
+      if (tasks.length) await Promise.all(tasks);
     },
     async saveResource() {
       this.saving = true;
@@ -1070,6 +1118,7 @@ const ResourceManager = {
         } else {
           await http.post(meta.path, this.editForm);
         }
+        if (this.editKind === 'hotels') await this.saveRoomRates();   // 季节多档价矩阵随酒店一起保存
         ElementPlus.ElMessage.success(this.editForm.id ? '已更新' : '已新增');
         this.editDialog = false;
         await this.load(this.activeKind);
@@ -1474,6 +1523,31 @@ const ResourceManager = {
               <el-button size="small" type="danger" link @click="removeRoom(i)">删除</el-button>
             </div>
             <el-button size="small" plain @click="addRoom">+ 添加房型</el-button>
+
+            <!-- 房型 × 季节档 价格矩阵 (仅已保存过的房型; 新房型先保存酒店拿到 id) -->
+            <template v-if="editForm.id && editForm.rooms?.some(r => r.id)">
+              <el-divider>季节多档价 IDR/晚 <span style="font-weight:400;font-size:12px;color:#909399">(留空 = 回退上方 淡/旺 两档老字段)</span></el-divider>
+              <table style="width:100%;border-collapse:collapse;font-size:12px">
+                <thead>
+                  <tr style="border-bottom:1px solid #ebeef5">
+                    <th style="text-align:left;padding:6px 4px;width:160px">房型</th>
+                    <th v-for="b in SEASON_BAND_OPTS" :key="b.value" :style="{color:b.color,padding:'6px 4px',textAlign:'center'}">{{ b.label }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="rm in editForm.rooms.filter(r => r.id)" :key="rm.id" style="border-bottom:1px solid #f5f7fa">
+                    <td style="padding:4px;font-weight:600">{{ rm.room_type }}</td>
+                    <td v-for="b in SEASON_BAND_OPTS" :key="b.value" style="padding:3px">
+                      <el-input-number v-model="rateMatrix[rm.id][b.value]" :min="0" :step="100000"
+                                       size="small" controls-position="right" style="width:100%" />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <div v-if="editForm.rooms.some(r => !r.id)" style="font-size:12px;color:#e6a23c;margin-top:6px">
+                ⚠ 新添加的房型要先点「保存」拿到 id, 再进来录季节价
+              </div>
+            </template>
           </template>
 
           <!-- ===== 景点 ===== -->

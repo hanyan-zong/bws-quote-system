@@ -4,7 +4,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+# 本地运行(非 docker)也读取项目根 .env — 否则 .env 里的配置 (AI key / 汇率 / 口令等) 不生效.
+# override=False: 已存在的真实环境变量优先, 不被 .env 覆盖.
+load_dotenv(PROJECT_ROOT / ".env", override=False)
 BACKEND_DIR = PROJECT_ROOT / "backend"
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
 UPLOAD_DIR = PROJECT_ROOT / "uploads"

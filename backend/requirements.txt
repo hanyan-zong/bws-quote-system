@@ -6,6 +6,8 @@ pydantic-settings==2.6.0
 python-multipart==0.0.12
 aiofiles==24.1.0
 httpx==0.27.2
+python-dotenv==1.0.1   # config.py 顶部 load_dotenv 必需 (2026-06-11)
+holidays==0.98         # 季节日历节日自动生成 (CN/ID 公共节日, 2026-06-11)
 
 # AI 解析
 anthropic==0.39.0

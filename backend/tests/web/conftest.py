@@ -20,6 +20,11 @@ _TMP_DB_PATH = _TMP_DB_DIR / "test.db"
 os.environ["BWS_DATABASE_URL"] = f"sqlite:///{_TMP_DB_PATH}"
 os.environ["PYTHONIOENCODING"] = "utf-8"
 os.environ.pop("ANTHROPIC_API_KEY", None)
+# config.py 的 load_dotenv 会读项目根 .env (BWS_AUTH_PASSWORD=123456 等), 污染测试预期.
+# 显式钉死测试认证为默认 admin/admin123; load_dotenv(override=False) 见 env 已存在即跳过, 不覆盖.
+os.environ["BWS_AUTH_USERNAME"] = "admin"
+os.environ["BWS_AUTH_PASSWORD"] = "admin123"
+os.environ["BWS_AUTH_SECRET"] = "pytest-secret"
 
 # 防御性 reload: CLI 测试 (test_cli_data_import_json.py 顶部 `from app.cli.data_cmd import _parse_import_summary`)
 # 在 pytest collect 阶段就触发了 app.config import → settings 在 class body 用 os.getenv

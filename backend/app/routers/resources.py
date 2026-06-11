@@ -121,23 +121,33 @@ def create_or_update_hotel(payload: HotelIn, db: Session = Depends(get_db)):
     hotel.description = payload.description
     db.flush()
 
-    # 房型 — 简化: 全删全建
+    # 房型 — diff 式 upsert (带 id 更新 / 无 id 新建 / 消失的删除).
+    # 不能全删全建: room_rates.room_id FK 指向 hotel_rooms.id, 重建会让房型 id 全变,
+    # 已录的季节多档价格 (RoomRate) 被级联删除或变孤儿数据.
     if payload.rooms is not None:
-        db.query(models.HotelRoom).filter_by(hotel_id=hotel.id).delete()
+        existing = {r.id: r for r in db.query(models.HotelRoom).filter_by(hotel_id=hotel.id).all()}
+        kept_ids: set[int] = set()
         for r in payload.rooms:
-            room = models.HotelRoom(
-                hotel_id=hotel.id,
-                room_type=r.room_type,
-                max_occupancy=r.max_occupancy,
-                breakfast_included=r.breakfast_included,
-                cost_idr_low=r.cost_idr_low,
-                cost_idr_high=r.cost_idr_high,
-                valid_from=r.valid_from,
-                valid_to=r.valid_to,
-                supplier=r.supplier,
-                note=r.note,
-            )
-            db.add(room)
+            room = existing.get(r.id) if r.id else None
+            if room is None:
+                room = models.HotelRoom(hotel_id=hotel.id)
+                db.add(room)
+            else:
+                kept_ids.add(room.id)
+            room.room_type = r.room_type
+            room.max_occupancy = r.max_occupancy
+            room.breakfast_included = r.breakfast_included
+            room.cost_idr_low = r.cost_idr_low
+            room.cost_idr_high = r.cost_idr_high
+            room.valid_from = r.valid_from
+            room.valid_to = r.valid_to
+            room.supplier = r.supplier
+            room.note = r.note
+        for rid, room in existing.items():
+            if rid not in kept_ids:
+                # SQLite 默认不开 PRAGMA foreign_keys, ondelete=CASCADE 不会自动执行 — 手动清该房型的 rate
+                db.query(models.RoomRate).filter_by(room_id=rid).delete()
+                db.delete(room)
     db.commit()
     return {"id": hotel.id, "message": "ok"}
 
@@ -147,6 +157,14 @@ def delete_hotel(hotel_id: int, db: Session = Depends(get_db)):
     h = db.get(models.Hotel, hotel_id)
     if not h:
         raise HTTPException(404, "酒店不存在")
+    # RoomRate 没有 ORM relationship, ORM 级联删不到; SQLite 也不开 FK enforcement.
+    # 不清会留孤儿 rate, rowid 复用后会附身到未来新房型上 → 报价引擎静默用错价格.
+    room_ids = [r.id for r in h.rooms]
+    if room_ids:
+        db.query(models.RoomRate).filter(models.RoomRate.room_id.in_(room_ids)).delete(synchronize_session=False)
+    # Surcharge(hotel 专属的) / HotelPackage 同理: ondelete=CASCADE 在 SQLite 不生效, 手动清
+    db.query(models.Surcharge).filter_by(hotel_id=hotel_id).delete(synchronize_session=False)
+    db.query(models.HotelPackage).filter_by(hotel_id=hotel_id).delete(synchronize_session=False)
     db.delete(h)
     db.commit()
     return {"ok": True}

@@ -138,3 +138,61 @@ def test_room_rate_attached_to_room(admin_client):
 
     # 清理
     admin_client.delete(f"/api/v1/resources/hotels/{hid}")
+
+
+def test_hotel_resave_keeps_room_ids_and_rates(admin_client):
+    """2026-06-11 回归: 保存酒店改为 diff upsert — 房型 id 不变, RoomRate 不丢.
+
+    老实现是全删全建: 每次保存酒店房型 id 全变, 已录季节档价格级联丢失/变孤儿.
+    """
+    r = admin_client.post("/api/v1/resources/hotels", json={
+        "destination_id": 1, "name_zh": "pytest 重存酒店",
+        "rooms": [
+            {"room_type": "Deluxe", "max_occupancy": 2,
+             "cost_idr_low": 1000000, "cost_idr_high": 2000000},
+            {"room_type": "Suite", "max_occupancy": 3,
+             "cost_idr_low": 3000000, "cost_idr_high": 5000000},
+        ],
+    })
+    assert r.status_code == 200, r.text
+    hid = r.json()["id"]
+
+    h = next(x for x in admin_client.get("/api/v1/resources/hotels").json() if x["id"] == hid)
+    deluxe = next(rm for rm in h["rooms"] if rm["room_type"] == "Deluxe")
+    suite = next(rm for rm in h["rooms"] if rm["room_type"] == "Suite")
+
+    # Deluxe 录 2 档价
+    for band, cost in [("low", 1000000), ("peak", 4200000)]:
+        r = admin_client.post("/api/v1/resources/room-rates", json={
+            "room_id": deluxe["id"], "season_band": band, "cost_idr": cost,
+        })
+        assert r.status_code == 200, r.text
+
+    # 重存酒店: Deluxe 带 id 改名, Suite 删除, 新增 Villa
+    r = admin_client.post("/api/v1/resources/hotels", json={
+        "id": hid, "destination_id": 1, "name_zh": "pytest 重存酒店",
+        "rooms": [
+            {"id": deluxe["id"], "room_type": "Deluxe Ocean", "max_occupancy": 2,
+             "cost_idr_low": 1100000, "cost_idr_high": 2100000},
+            {"room_type": "Villa", "max_occupancy": 4,
+             "cost_idr_low": 6000000, "cost_idr_high": 9000000},
+        ],
+    })
+    assert r.status_code == 200, r.text
+
+    h2 = next(x for x in admin_client.get("/api/v1/resources/hotels").json() if x["id"] == hid)
+    types = sorted(rm["room_type"] for rm in h2["rooms"])
+    assert types == ["Deluxe Ocean", "Villa"]
+    deluxe2 = next(rm for rm in h2["rooms"] if rm["room_type"] == "Deluxe Ocean")
+    assert deluxe2["id"] == deluxe["id"], "带 id 的房型重存后 id 必须不变"
+
+    # Deluxe 的 2 档价仍在
+    rates = admin_client.get(f"/api/v1/resources/room-rates?room_id={deluxe['id']}").json()
+    assert sorted(rt["season_band"] for rt in rates) == ["low", "peak"]
+
+    # 被删的 Suite 的 rate 不残留孤儿 (Suite 没录过 rate, 但端点不应报错)
+    rates_suite = admin_client.get(f"/api/v1/resources/room-rates?room_id={suite['id']}").json()
+    assert rates_suite == []
+
+    # 清理
+    admin_client.delete(f"/api/v1/resources/hotels/{hid}")

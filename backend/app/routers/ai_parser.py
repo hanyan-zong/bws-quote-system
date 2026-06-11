@@ -19,13 +19,20 @@ from ..database import get_db
 from ..schemas import ConfirmExtractionIn
 from ..utils.feature_permissions import consume_quota
 from ..utils.itinerary_matcher import detect_missing_fields, match_itinerary_to_resources
+from ..utils.permissions import require_role
 from .auth import get_current_user
+
+# AI 资源采集链路 (parse/extractions/confirm) 是"往资源库写数据"的入口,
+# 与 v0.9.2 resources 写端点同级 — 仅公司侧角色可用.
+# extractions 的 extracted_json 含原始 cost_idr, GET 同样不能对 agent 开放.
+# parse-itinerary / quote-from-itinerary 是业务员报价流程, 不在此列 (自带 feature/quota 检查).
+_admin_only = [Depends(require_role("super_admin", "ops_manager"))]
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 logger = logging.getLogger("bws.ai.api")
 
 
-@router.post("/parse")
+@router.post("/parse", dependencies=_admin_only)
 async def parse_upload(
     request: Request,
     file: UploadFile = File(...),
@@ -70,7 +77,7 @@ async def parse_upload(
     return result
 
 
-@router.get("/extractions")
+@router.get("/extractions", dependencies=_admin_only)
 def list_extractions(status: str | None = None, db: Session = Depends(get_db)):
     q = db.query(models.AiExtraction).order_by(models.AiExtraction.id.desc())
     if status:
@@ -90,7 +97,7 @@ def list_extractions(status: str | None = None, db: Session = Depends(get_db)):
     ]
 
 
-@router.get("/extractions/{eid}")
+@router.get("/extractions/{eid}", dependencies=_admin_only)
 def get_extraction(eid: int, db: Session = Depends(get_db)):
     r = db.get(models.AiExtraction, eid)
     if not r:
@@ -104,7 +111,7 @@ def get_extraction(eid: int, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/extractions/{eid}/confirm")
+@router.post("/extractions/{eid}/confirm", dependencies=_admin_only)
 def confirm_extraction(eid: int, payload: ConfirmExtractionIn, db: Session = Depends(get_db)):
     rec = db.get(models.AiExtraction, eid)
     if not rec:

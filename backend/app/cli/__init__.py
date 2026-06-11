@@ -5,6 +5,8 @@
     bws data    import|export|backup|restore  数据迁移
     bws server  start|status|stop    后端服务运维
     bws db      init|migrate|query|stats  数据库管理
+    bws season  suggest              节日档自动生成季节日历 (holidays 库)
+    bws dev                          一键启动 (db init + alembic upgrade + uvicorn 前台)
     bws doctor                       环境自检 (entry-point / 残骸 / 版本 / alembic)
     bws version show|bump            版本号统一管理 + 自动重装 (根治漂移)
 """
@@ -14,7 +16,8 @@ import argparse
 import os
 import sys
 
-from . import data_cmd, db_cmd, dev_cmd, doctor_cmd, quote_cmd, server_cmd, version_cmd
+from .. import __version__
+from . import data_cmd, db_cmd, dev_cmd, doctor_cmd, quote_cmd, season_cmd, server_cmd, version_cmd
 from ._common import CliError
 
 
@@ -33,13 +36,14 @@ def build_parser() -> argparse.ArgumentParser:
         prog="bws",
         description="BWS 预报价系统命令行 (v0.9.3)",
     )
-    parser.add_argument("--version", action="version", version="bws 0.1.0")
+    parser.add_argument("--version", action="version", version=f"bws {__version__}")
     subparsers = parser.add_subparsers(dest="group", metavar="<group>", required=True)
 
     quote_cmd.register(subparsers)
     data_cmd.register(subparsers)
     server_cmd.register(subparsers)
     db_cmd.register(subparsers)
+    season_cmd.register(subparsers)
     dev_cmd.register(subparsers)
     doctor_cmd.register(subparsers)
     version_cmd.register(subparsers)
