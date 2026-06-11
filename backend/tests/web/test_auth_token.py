@@ -27,6 +27,7 @@ def test_token_returns_pair_for_valid_credentials(web_client):
     assert data["access_token"].count(".") == 2
     assert len(data["refresh_token"]) > 40
     assert data["expires_in"] == 30 * 60
+    assert data["refresh_expires_in"] == 14 * 86400
     assert data["user"]["username"] == "admin"
 
 

@@ -16,7 +16,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .. import models
 from ..database import get_db
@@ -213,14 +213,45 @@ def create_or_update_quote(payload: QuoteIn, request: Request, db: Session = Dep
 
 
 @router.get("")
-def list_quotes(request: Request, db: Session = Depends(get_db), status: str | None = None):
+def list_quotes(
+    request: Request,
+    db: Session = Depends(get_db),
+    status: str | None = None,
+    page: int | None = None,
+    size: int = 20,
+):
+    """报价单列表.
+
+    v0.10: 带 page 参数 → 分页信封 {items,total,page,size,pages} (APP z-paging 用);
+    不带 page → 老行为裸数组上限 200 (web 前端依赖此格式, 只增不改).
+    """
     user = get_current_user(request, db)
-    q = db.query(models.Quote).options(joinedload(models.Quote.days))
+    base = db.query(models.Quote)
     if status:
-        q = q.filter(models.Quote.status == status)
-    q = filter_quotes_by_scope(q, user)
-    q = q.order_by(models.Quote.created_at.desc()).limit(200)
-    return [filter_quote_dict(_quote_to_dict(x), user) for x in q.all()]
+        base = base.filter(models.Quote.status == status)
+    base = filter_quotes_by_scope(base, user)
+    ordered = base.order_by(models.Quote.created_at.desc())
+
+    if page is None:
+        rows = ordered.options(joinedload(models.Quote.days)).limit(200).all()
+        return [filter_quote_dict(_quote_to_dict(x), user) for x in rows]
+
+    page = max(1, page)
+    size = min(max(1, size), 100)
+    total = base.count()
+    rows = (
+        ordered.options(selectinload(models.Quote.days))
+        .offset((page - 1) * size)
+        .limit(size)
+        .all()
+    )
+    return {
+        "items": [filter_quote_dict(_quote_to_dict(x), user) for x in rows],
+        "total": total,
+        "page": page,
+        "size": size,
+        "pages": (total + size - 1) // size,
+    }
 
 
 @router.get("/{quote_id}")

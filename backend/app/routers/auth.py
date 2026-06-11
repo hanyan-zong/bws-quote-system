@@ -308,6 +308,7 @@ def _token_pair_response(db: Session, user: models.User, request: Request) -> di
         "access_token": make_access_token(user.id),
         "expires_in": ACCESS_TOKEN_MINUTES * 60,
         "refresh_token": refresh_plain,
+        "refresh_expires_in": REFRESH_TOKEN_DAYS * 86400,
         "user": _user_to_dict(user, db),
     }
 

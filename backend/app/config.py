@@ -58,10 +58,12 @@ class Settings:
 
     # ---- 服务 ----
     # 含 cookie 的请求需要明确域名,不能用 "*"
+    # 9000 = mobile (uni-app) H5 dev server; 真机局域网调试用 BWS_CORS_ORIGINS 加自己的 IP
     cors_origins: list[str] = [
         o.strip() for o in os.getenv(
             "BWS_CORS_ORIGINS",
-            "http://localhost:8000,http://127.0.0.1:8000",
+            "http://localhost:8000,http://127.0.0.1:8000,"
+            "http://localhost:9000,http://127.0.0.1:9000",
         ).split(",") if o.strip()
     ]
     api_prefix: str = "/api/v1"
