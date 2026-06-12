@@ -1,48 +1,43 @@
 """Web 后端 (FastAPI) 测试用 fixtures.
 
-关键: 顶部 set BWS_DATABASE_URL → tmp file, 在 import app.* 之前生效.
-这样 app.database.engine 这个 module-level singleton 指向 tmp DB.
+2026-06-12 起 config.Settings 的 database_url/auth_* 是 property (每次读 env),
+database.get_engine 是 lru_cache 延迟创建 — 只要在**第一次建 engine 之前**把
+BWS_DATABASE_URL 指到 tmp 文件即可, 不再需要老的 sys.modules reload hack
+(老 hack 见 git history: Settings 用 class-level os.getenv, import 即锁定主 DB).
 
 整个 session 共享一个 tmp DB (test 之间数据互通) — 用唯一 quote_no/username 前缀隔离.
 """
 from __future__ import annotations
 
 import os
-import sys
 import tempfile
 from pathlib import Path
 
 import pytest
 
-# ---- MUST set env BEFORE importing any app.* module ----
+# ---- 在任何 app.* 的 engine 被创建前设好 env (lazy 化后时序要求仅此而已) ----
 _TMP_DB_DIR = Path(tempfile.mkdtemp(prefix="bws_web_tests_"))
 _TMP_DB_PATH = _TMP_DB_DIR / "test.db"
 os.environ["BWS_DATABASE_URL"] = f"sqlite:///{_TMP_DB_PATH}"
 os.environ["PYTHONIOENCODING"] = "utf-8"
 os.environ.pop("ANTHROPIC_API_KEY", None)
 # config.py 的 load_dotenv 会读项目根 .env (BWS_AUTH_PASSWORD=123456 等), 污染测试预期.
-# 显式钉死测试认证为默认 admin/admin123; load_dotenv(override=False) 见 env 已存在即跳过, 不覆盖.
+# 显式钉死测试认证为默认 admin/admin123.
 os.environ["BWS_AUTH_USERNAME"] = "admin"
 os.environ["BWS_AUTH_PASSWORD"] = "admin123"
 os.environ["BWS_AUTH_SECRET"] = "pytest-secret"
 
-# 防御性 reload: CLI 测试 (test_cli_data_import_json.py 顶部 `from app.cli.data_cmd import _parse_import_summary`)
-# 在 pytest collect 阶段就触发了 app.config import → settings 在 class body 用 os.getenv
-# 锁定 database_url 成主 DB. 这里清 sys.modules 让 app.* 重新初始化, settings 拿到 tmp DB.
-# CLI 测试用 subprocess, 不受父进程 app.* state 影响, 所以清掉无副作用.
-for _mod in list(sys.modules):
-    if _mod == "app" or _mod.startswith("app."):
-        del sys.modules[_mod]
-
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.database import engine, init_db  # noqa: E402
+from app.database import get_engine, init_db  # noqa: E402
 from app.main import create_app  # noqa: E402
 
-# Sanity: engine 必须指向 tmp DB, 否则后续测试会污染主 DB
-assert str(engine.url).endswith("test.db"), (
-    f"engine.url = {engine.url!r} — 期望 tmp DB. "
-    f"sys.modules reload 没生效, 检查 app.* import 链"
+# Sanity: engine 必须指向 tmp DB, 否则后续测试会污染主 DB.
+# CLI 测试在 collect 阶段 import app.* 不再锁定 URL (lazy), 但如果有人在本 conftest
+# 之前就调了 get_engine() (例如未来某 conftest 顶层连库), 这里会立刻报出来.
+assert str(get_engine().url).endswith("test.db"), (
+    f"engine.url = {get_engine().url!r} — 期望 tmp DB. "
+    f"某处在设 BWS_DATABASE_URL 之前就创建了 engine (检查 import 链/其他 conftest)"
 )
 
 

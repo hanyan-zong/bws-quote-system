@@ -22,18 +22,31 @@ for d in (UPLOAD_DIR, LOG_DIR, DATA_DIR):
 
 
 class Settings:
-    """运行期配置. 通过环境变量调整."""
+    """运行期配置. 通过环境变量调整.
 
-    # ---- DB ----
-    database_url: str = os.getenv(
-        "BWS_DATABASE_URL",
-        f"sqlite:///{DATA_DIR / 'bws_quote.db'}",
-    )
+    database_url / auth_* 是 property (每次读 env) — 这样"先 import app.* 再设
+    BWS_DATABASE_URL"也生效, 测试不再需要 sys.modules reload hack (2026-06-12).
+    其余字段进程生命周期内不变, 保持 class-level 求值.
+    """
+
+    # ---- DB (lazy: 配合 database.get_engine 的延迟建引擎) ----
+    @property
+    def database_url(self) -> str:
+        return os.getenv("BWS_DATABASE_URL", f"sqlite:///{DATA_DIR / 'bws_quote.db'}")
 
     # ---- 登录账号 + 口令 (v0.8 起强制启用; 留空也用 admin/admin123 兜底)
-    auth_username: str = os.getenv("BWS_AUTH_USERNAME", "") or "admin"
-    auth_password: str = os.getenv("BWS_AUTH_PASSWORD", "") or "admin123"
-    auth_secret: str = os.getenv("BWS_AUTH_SECRET", "bali-default-secret")
+    @property
+    def auth_username(self) -> str:
+        return os.getenv("BWS_AUTH_USERNAME", "") or "admin"
+
+    @property
+    def auth_password(self) -> str:
+        return os.getenv("BWS_AUTH_PASSWORD", "") or "admin123"
+
+    @property
+    def auth_secret(self) -> str:
+        return os.getenv("BWS_AUTH_SECRET", "bali-default-secret")
+
     auth_cookie_name: str = "bws_session"
     auth_session_days: int = 7
 

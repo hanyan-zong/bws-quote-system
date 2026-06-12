@@ -1,10 +1,19 @@
-"""SQLAlchemy 引擎与会话工厂."""
+"""SQLAlchemy 引擎与会话工厂.
+
+2026-06-12: engine/SessionLocal 改为**延迟创建** (get_engine/get_sessionmaker +
+lru_cache) — import app.* 不再锁定 DB URL, "先 import 后设 BWS_DATABASE_URL"
+也生效, 测试不需要 sys.modules reload hack. 旧名 `engine` / `SessionLocal`
+通过模块级 __getattr__ (PEP 562) 兼容, 函数内 `from ..database import engine`
+每次都取到当前引擎.
+"""
 from __future__ import annotations
 
 from contextlib import contextmanager
+from functools import lru_cache
 from typing import Iterator
 
 from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import settings
@@ -14,19 +23,36 @@ class Base(DeclarativeBase):
     """所有 ORM 模型的基类."""
 
 
-engine = create_engine(
-    settings.database_url,
-    echo=False,
-    future=True,
-    connect_args={"check_same_thread": False} if settings.database_url.startswith("sqlite") else {},
-)
+@lru_cache(maxsize=None)
+def get_engine() -> Engine:
+    url = settings.database_url
+    return create_engine(
+        url,
+        echo=False,
+        future=True,
+        connect_args={"check_same_thread": False} if url.startswith("sqlite") else {},
+    )
 
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+
+@lru_cache(maxsize=None)
+def get_sessionmaker() -> sessionmaker:
+    return sessionmaker(
+        bind=get_engine(), autoflush=False, autocommit=False, expire_on_commit=False
+    )
+
+
+def __getattr__(name: str):
+    # PEP 562: 兼容旧用法 `from .database import engine / SessionLocal`
+    if name == "engine":
+        return get_engine()
+    if name == "SessionLocal":
+        return get_sessionmaker()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def get_db() -> Iterator[Session]:
     """FastAPI 依赖注入用."""
-    db = SessionLocal()
+    db = get_sessionmaker()()
     try:
         yield db
     finally:
@@ -36,7 +62,7 @@ def get_db() -> Iterator[Session]:
 @contextmanager
 def session_scope() -> Iterator[Session]:
     """命令行脚本用 — 自动提交+回滚."""
-    db = SessionLocal()
+    db = get_sessionmaker()()
     try:
         yield db
         db.commit()
@@ -56,7 +82,7 @@ def init_db() -> None:
         (已跑过所有 ALTER), 第三方从 v0.7 升级请走 alembic baseline + 写 0001 迁移.
     """
     from . import models  # noqa: F401  确保模型都注册
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=get_engine())
     _ensure_bootstrap_admin()
     _ensure_gamble_strategies_synced()
 
@@ -64,7 +90,7 @@ def init_db() -> None:
 def _ensure_gamble_strategies_synced() -> None:
     """启动同步: seed.py 里有新策略条目时, 把缺的补上 (按 name 幂等)."""
     from .seed import _seed_gamble_strategies
-    db = SessionLocal()
+    db = get_sessionmaker()()
     try:
         _seed_gamble_strategies(db)
         db.commit()
@@ -83,7 +109,7 @@ def _ensure_bootstrap_admin() -> None:
     """
     from . import models
     from .config import settings as _settings
-    db = SessionLocal()
+    db = get_sessionmaker()()
     try:
         existing = db.query(models.User).filter_by(role="super_admin").first()
         if existing is not None:
