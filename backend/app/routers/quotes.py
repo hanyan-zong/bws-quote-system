@@ -101,6 +101,7 @@ def _quote_to_dict(q: models.Quote) -> dict[str, Any]:
         "id": q.id,
         "quote_no": q.quote_no,
         "agency_name": q.agency_name,
+        "agency_contact": q.agency_contact,  # v0.10: APP 编辑模式透传用 (保存是全量覆盖语义)
         "customer_name": q.customer_name,
         "pax_adult": q.pax_adult,
         "pax_child": q.pax_child,
@@ -133,6 +134,7 @@ def _quote_to_dict(q: models.Quote) -> dict[str, Any]:
                 "day_index": d.day_index,
                 "date": d.date.isoformat() if d.date else None,
                 "is_free": d.is_free,
+                "free_hours": getattr(d, "free_hours", 0) or 0,  # v0.10: APP 编辑透传 (不下发会被全量覆盖抹掉)
                 "day_type": getattr(d, "day_type", "full") or "full",
                 "template_id": d.template_id,
                 "hotel_id": d.hotel_id,
@@ -145,11 +147,13 @@ def _quote_to_dict(q: models.Quote) -> dict[str, Any]:
                 "afternoon_tea_id": d.afternoon_tea_id,
                 "spa_id": d.spa_id,
                 "water_activity_id": d.water_activity_id,
+                "start_time": d.start_time.isoformat() if d.start_time else None,  # v0.10: APP 编辑透传
                 "notes": d.notes,
                 "items": [
                     {
                         "attraction_id": i.attraction_id,
                         "order_index": i.order_index,
+                        "arrival_time": i.arrival_time.isoformat() if i.arrival_time else None,  # v0.10: 同上
                         "stay_minutes": i.stay_minutes,
                     }
                     for i in d.items
@@ -254,6 +258,33 @@ def list_quotes(
     }
 
 
+def _day_resource_names(q: models.Quote, db: Session) -> dict[str, dict[int, str]]:
+    """v0.10 APP 详情页人话渲染用 — 把 days 引用到的资源 id 批量换成中文名.
+
+    只查本报价用到的 id (不全量 dump 资源库); 移动端拿 names 直接渲染, 不用再拉资源接口.
+    """
+    def ids(attr: str) -> set[int]:
+        return {getattr(d, attr) for d in q.days if getattr(d, attr)}
+
+    def name_map(model, id_set: set[int], label=None) -> dict[int, str]:
+        if not id_set:
+            return {}
+        rows = db.query(model).filter(model.id.in_(id_set)).all()
+        return {r.id: (label(r) if label else r.name_zh) for r in rows}
+
+    attraction_ids = {i.attraction_id for d in q.days for i in d.items if i.attraction_id}
+    restaurant_ids = ids("lunch_restaurant_id") | ids("dinner_restaurant_id")
+    return {
+        "hotels": name_map(models.Hotel, ids("hotel_id")),
+        "rooms": name_map(models.HotelRoom, ids("hotel_room_id"), lambda r: r.room_type),
+        "vehicles": name_map(models.Vehicle, ids("vehicle_id"), lambda r: f"{r.vehicle_type} {r.seat_count}座"),
+        "guides": name_map(models.Guide, ids("guide_id")),
+        "attractions": name_map(models.Attraction, attraction_ids),
+        "restaurants": name_map(models.Restaurant, restaurant_ids),
+        "templates": name_map(models.DayTripTemplate, ids("template_id")),
+    }
+
+
 @router.get("/{quote_id}")
 def get_quote(quote_id: int, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
@@ -271,7 +302,9 @@ def get_quote(quote_id: int, request: Request, db: Session = Depends(get_db)):
             raise HTTPException(403, "无权查看")
         if user.role == "agency_owner" and quote.agency_id != user.agency_id:
             raise HTTPException(403, "无权查看其他旅行社的报价")
-    return filter_quote_dict(_quote_to_dict(quote), user)
+    data = filter_quote_dict(_quote_to_dict(quote), user)
+    data["names"] = _day_resource_names(quote, db)
+    return data
 
 
 @router.delete("/{quote_id}")
