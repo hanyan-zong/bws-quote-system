@@ -48,7 +48,7 @@ async def _lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(
         title="BWS 预报价系统 · B 端",
-        version="0.9.3",
+        version="0.10.0",
         description="面向同业旅行社的智能预报价系统 — 强制账号系统 + 多步注册向导 + 自助审核 + 5 角色权限 + 功能配额 + AI 一键上传行程报价 + 资源库 + 行程组合 + 合理性校验 + 赌自费(铁律+5维度) + 三件套导出 + 反馈回写",
         lifespan=_lifespan,
     )
@@ -108,8 +108,8 @@ def create_app() -> FastAPI:
     def health():
         return {
             "ok": True,
-            "version": "0.9.3",
-            "version_label": "v0.9.3 · day_type 4 类 (全天/半天/抵达/送机) + 复制天 + UI 美化",
+            "version": "0.10.0",
+            "version_label": "v0.10.0 · APP 双 token 认证 + quotes 分页 + 房型季节价矩阵",
             "ai_available": settings.ai_available,
             "ai_model": settings.anthropic_model if settings.ai_available else "mock",
         }
