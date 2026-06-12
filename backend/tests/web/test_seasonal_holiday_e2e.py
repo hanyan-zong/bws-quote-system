@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+from contextlib import suppress
 from datetime import date
 from decimal import Decimal
 
@@ -25,11 +26,40 @@ from app.utils import pricing_engine
 PREFIX = "pytest-holiday-e2e"
 
 
+def _purge_residue(admin_client) -> None:
+    """按 PREFIX 清掉本套件的残留资源 (best-effort, 单条失败不阻断).
+
+    背景: 混跑全套时 Windows 偶发 WinError 10055 (socket 缓冲区耗尽) 把 teardown
+    打断在半路 → 残留一整套 surcharge/calendar → 后续测试计价翻倍连锁失败.
+    setup 先自愈清残留, teardown 也走这里, 任何一次中断都不会传染下一次.
+    """
+    for path in ("surcharges", "season-calendars"):
+        with suppress(Exception):
+            for row in admin_client.get(f"/api/v1/resources/{path}").json():
+                if str(row.get("name", "")).startswith(PREFIX):
+                    with suppress(Exception):
+                        admin_client.delete(f"/api/v1/resources/{path}/{row['id']}")
+    with suppress(Exception):
+        for h in admin_client.get("/api/v1/resources/hotels").json():
+            if not str(h.get("name_zh", "")).startswith(PREFIX):
+                continue
+            # SQLite 默认不开 FK CASCADE — 先删房型下的 RoomRate 才删得动 hotel
+            for room in h.get("rooms") or []:
+                with suppress(Exception):
+                    for rate in admin_client.get(
+                        f"/api/v1/resources/room-rates?room_id={room['id']}"
+                    ).json():
+                        admin_client.delete(f"/api/v1/resources/room-rates/{rate['id']}")
+            with suppress(Exception):
+                admin_client.delete(f"/api/v1/resources/hotels/{h['id']}")
+
+
 @pytest.fixture
 def seeded_world(admin_client):
     """建一个酒店 + 4 档房价 + 3 段假期日历 + 3 条假期附加费 + 1 条全局政府税.
-    返回 ids dict, 测试用. teardown 自动清理.
+    返回 ids dict, 测试用. setup 前先清残留 (自愈), teardown 自动清理.
     """
+    _purge_residue(admin_client)
     # ---- 建酒店 + 1 房型 ----
     r = admin_client.post("/api/v1/resources/hotels", json={
         "destination_id": 1,
@@ -104,15 +134,8 @@ def seeded_world(admin_client):
         "rate_ids": rate_ids, "cal_ids": cal_ids, "sur_ids": sur_ids,
     }
 
-    # ---- teardown: 清干净, 避免污染其他测试 ----
-    # SQLite 默认不开 PRAGMA foreign_keys=ON, FK CASCADE 不生效 → 必须主动删 RoomRate
-    for rid in rate_ids:
-        admin_client.delete(f"/api/v1/resources/room-rates/{rid}")
-    for sid in sur_ids:
-        admin_client.delete(f"/api/v1/resources/surcharges/{sid}")
-    for cid in cal_ids:
-        admin_client.delete(f"/api/v1/resources/season-calendars/{cid}")
-    admin_client.delete(f"/api/v1/resources/hotels/{hid}")
+    # ---- teardown: 与 setup 共用按 PREFIX 的 best-effort 清理 ----
+    _purge_residue(admin_client)
 
 
 def _create_quote_and_calc(admin_client, *, day_date: str, room_id: int, hotel_id: int,

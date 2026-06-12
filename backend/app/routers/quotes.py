@@ -235,7 +235,8 @@ def list_quotes(
     if status:
         base = base.filter(models.Quote.status == status)
     base = filter_quotes_by_scope(base, user)
-    ordered = base.order_by(models.Quote.created_at.desc())
+    # id 做第二排序键: created_at 秒级精度下同秒多单顺序未定义, 翻页会重复/丢单
+    ordered = base.order_by(models.Quote.created_at.desc(), models.Quote.id.desc())
 
     if page is None:
         rows = ordered.options(joinedload(models.Quote.days)).limit(200).all()
