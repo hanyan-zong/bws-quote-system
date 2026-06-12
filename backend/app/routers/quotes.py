@@ -16,6 +16,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .. import models
@@ -256,6 +257,29 @@ def list_quotes(
         "size": size,
         "pages": (total + size - 1) // size,
     }
+
+
+@router.get("/stats")
+def quote_stats(request: Request, db: Session = Depends(get_db)):
+    """状态分布统计 — v0.10 APP 工作台首页用.
+
+    可见范围与列表一致 (filter_quotes_by_scope): agent 只统计自己创建的单.
+    注意: 本路由必须注册在 /{quote_id} 之前, 否则 "stats" 会被当作 quote_id 解析.
+    """
+    user = get_current_user(request, db)
+    base = filter_quotes_by_scope(db.query(models.Quote), user)
+    rows = (
+        base.with_entities(models.Quote.status, func.count(models.Quote.id))
+        .group_by(models.Quote.status)
+        .all()
+    )
+    by_status = {s: 0 for s in ("draft", "sent", "accepted", "lost")}
+    total = 0
+    for status_value, count in rows:
+        total += count
+        if status_value in by_status:
+            by_status[status_value] = count
+    return {"total": total, "by_status": by_status}
 
 
 def _day_resource_names(q: models.Quote, db: Session) -> dict[str, dict[int, str]]:
