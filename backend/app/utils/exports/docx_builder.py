@@ -224,7 +224,9 @@ def build_docx(ctx: dict[str, Any]) -> bytes:
     # 页脚
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = p.add_run("本报价单由 BWS 预报价系统 B 端版本 (v0.5) 自动生成 · © PT BWS Indonesia")
+    run = p.add_run(
+        f"本报价单由 BWS 预报价系统 B 端版本 (v{ctx['meta']['version']}) 自动生成 · © PT BWS Indonesia"
+    )
     _set_font(run, size=8, color=GRAY_TEXT)
     run.italic = True
 

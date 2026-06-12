@@ -15,6 +15,11 @@ from ... import models
 from ..permissions import can_see_costs
 
 
+def _app_version() -> str:
+    from ... import __version__
+    return __version__
+
+
 def _name(obj: Any, attr_zh: str = "name_zh", attr_fb: str = "name") -> str:
     if obj is None:
         return ""
@@ -175,7 +180,9 @@ def build_export_context(
                 user.username if user else "system"
             ),
             "exporter_role": user.role if user else "guest",
-            "system": "BWS 预报价系统 · B 端 v0.5",
+            # 版本动态取 app.__version__ (canonical 之一), bump 后导出文档自动跟上
+            "system": f"BWS 预报价系统 · B 端 v{_app_version()}",
+            "version": _app_version(),
         },
         "quote": quote_dict,
         "days": days_out,
